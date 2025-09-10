@@ -1,0 +1,22 @@
+# Generate requirements.txt content
+requirements_content = """# IBM Stack
+ibm-watsonx-orchestrate-adk==0.1.0
+ibm-generative-ai==3.0.0
+
+# RAG & Data Processing
+langchain==0.1.0
+langchain-community==0.0.13
+pypdf==3.17.4
+faiss-cpu==1.7.4
+sentence-transformers==2.2.2
+python-dotenv==1.0.0
+
+# User Interface
+streamlit==1.28.1
+
+# Additional utilities
+numpy==1.24.3
+pandas==2.0.3
+"""
+
+print("Generated requirements.txt content")
