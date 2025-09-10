@@ -6,9 +6,7 @@
 
 *Empowering farmers with AI-powered guidance on PM-KISAN scheme benefits*
 
-[![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![IBM Watson](https://img.shields.io/badge/IBM_Watson-1261FE?style=for-the-badge&logo=ibm&logoColor=white)](https://www.ibm.com/watson)
-[![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org/)
+
 
 </div>
 
