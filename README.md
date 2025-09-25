@@ -1,21 +1,5 @@
 #  Sahay AI: Your Guide to Government Schemes
 
-<div align="center">
-
-![Sahay AI Logo](https://via.placeholder.com/600x200/2E8B57/FFFFFF?text=Sahay+AI+🙏)
-
-*Empowering farmers with AI-powered guidance on PM-KISAN scheme benefits*
-
-
-
-</div>
-
-##  Live Demo
-
-> **Note:** GIF placeholder - Record a demo showing the chat interface in action
-
-![Demo GIF](https://via.placeholder.com/800x450/F0F0F0/666666?text=Demo+GIF+Coming+Soon)
-
 ---
 
 ##  Problem Statement
