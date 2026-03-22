@@ -121,7 +121,7 @@ export function ChatInterface() {
             {/* Language Selector */}
             <div className="flex justify-between items-center mb-4 px-1">
                 <div className="flex items-center gap-3">
-                    <label htmlFor="language-select" className="text-zinc-500 text-sm">Language:</label>
+                    <label htmlFor="language-select" className="text-slate-500 text-sm">Language:</label>
                     <LanguageSelector
                         value={language}
                         onChange={setLanguage}
@@ -129,7 +129,7 @@ export function ChatInterface() {
                     />
                 </div>
                 {sessionId && (
-                    <span className="text-zinc-600 text-xs">
+                    <span className="text-slate-400 text-xs">
                         Session: {sessionId.slice(0, 8)}
                     </span>
                 )}
@@ -142,20 +142,20 @@ export function ChatInterface() {
                         <div className="glass-card p-6 max-w-md mx-auto text-left mb-6">
                             <div className="flex items-center gap-2 mb-4">
                                 <div className="w-2 h-2 bg-emerald-500 rounded-full" />
-                                <span className="text-sm text-zinc-400">Sahay AI Ready</span>
+                                <span className="text-sm text-slate-500">Sahay AI Ready</span>
                             </div>
-                            <p className="text-zinc-300 mb-4">Welcome! I can help you:</p>
-                            <ul className="space-y-2 text-zinc-400 text-sm">
+                            <p className="text-slate-700 mb-4">Welcome! I can help you:</p>
+                            <ul className="space-y-2 text-slate-600 text-sm">
                                 <li className="flex items-center gap-2">
-                                    <span className="text-emerald-400">•</span>
+                                    <span className="text-emerald-600">•</span>
                                     Discover 500+ government schemes
                                 </li>
                                 <li className="flex items-center gap-2">
-                                    <span className="text-emerald-400">•</span>
+                                    <span className="text-emerald-600">•</span>
                                     Check your eligibility instantly
                                 </li>
                                 <li className="flex items-center gap-2">
-                                    <span className="text-emerald-400">•</span>
+                                    <span className="text-emerald-600">•</span>
                                     Guide you through applications
                                 </li>
                             </ul>
@@ -167,11 +167,11 @@ export function ChatInterface() {
                                 <button
                                     key={i}
                                     onClick={() => sendMessage(q.text)}
-                                    className="w-full px-4 py-3 glass-card text-left hover:border-emerald-500/30 transition-all group"
+                                    className="w-full px-4 py-3 glass-card text-left hover:border-emerald-300 transition-all group"
                                 >
-                                    <span className="text-zinc-200 text-sm">{q.text}</span>
+                                    <span className="text-slate-700 text-sm">{q.text}</span>
                                     {q.text !== q.english && (
-                                        <span className="block text-zinc-500 text-xs mt-1">{q.english}</span>
+                                        <span className="block text-slate-400 text-xs mt-1">{q.english}</span>
                                     )}
                                 </button>
                             ))}
@@ -187,33 +187,33 @@ export function ChatInterface() {
                         <div
                             className={`max-w-[85%] px-4 py-3 rounded-2xl ${
                                 message.role === 'user'
-                                    ? 'bg-emerald-500/10 border border-emerald-500/20 rounded-br-sm'
-                                    : 'glass-card-accent rounded-bl-sm'
+                                    ? 'bg-emerald-50 border border-emerald-200 rounded-br-sm text-slate-800'
+                                    : 'glass-card rounded-bl-sm'
                             }`}
                         >
                             {message.role === 'assistant' && (
                                 <div className="flex items-center gap-2 mb-2">
-                                    <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
-                                    <span className="text-xs text-zinc-500">Sahay AI</span>
+                                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                                    <span className="text-xs text-slate-400">Sahay AI</span>
                                 </div>
                             )}
-                            <div className="whitespace-pre-wrap text-sm text-zinc-200 leading-relaxed">
+                            <div className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
                                 {message.content}
                             </div>
 
                             {message.schemes && message.schemes.length > 0 && (
                                 <div className="mt-4 space-y-2">
-                                    <p className="text-xs text-zinc-500 uppercase tracking-wider">Related Schemes</p>
+                                    <p className="text-xs text-slate-400 uppercase tracking-wider">Related Schemes</p>
                                     {message.schemes.map((scheme) => (
-                                        <div key={scheme.id} className="p-3 bg-zinc-900/50 rounded-lg border border-zinc-800">
+                                        <div key={scheme.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
                                             <div className="flex justify-between items-start mb-1">
-                                                <h4 className="font-medium text-zinc-200 text-sm">{scheme.name}</h4>
-                                                <span className="text-xs px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded">
+                                                <h4 className="font-medium text-slate-800 text-sm">{scheme.name}</h4>
+                                                <span className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded border border-emerald-200">
                                                     {scheme.category}
                                                 </span>
                                             </div>
                                             {scheme.benefit_summary && (
-                                                <p className="text-xs text-emerald-400/80">{scheme.benefit_summary}</p>
+                                                <p className="text-xs text-emerald-700">{scheme.benefit_summary}</p>
                                             )}
                                         </div>
                                     ))}
@@ -226,7 +226,7 @@ export function ChatInterface() {
                                         <button
                                             key={i}
                                             onClick={() => sendMessage(q)}
-                                            className="text-xs px-3 py-1.5 bg-zinc-800/50 text-zinc-400 rounded-lg hover:bg-zinc-800 hover:text-zinc-200 transition-colors border border-zinc-700/50"
+                                            className="text-xs px-3 py-1.5 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 hover:text-slate-800 transition-colors border border-slate-200"
                                         >
                                             {q}
                                         </button>
@@ -239,13 +239,13 @@ export function ChatInterface() {
 
                 {isLoading && (
                     <div className="flex justify-start">
-                        <div className="glass-card-accent px-4 py-3 rounded-2xl rounded-bl-sm">
+                        <div className="glass-card px-4 py-3 rounded-2xl rounded-bl-sm">
                             <div className="flex items-center gap-2">
-                                <span className="text-xs text-zinc-500">Thinking</span>
+                                <span className="text-xs text-slate-400">Thinking</span>
                                 <div className="flex gap-1">
-                                    <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                    <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                    <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                                 </div>
                             </div>
                         </div>
@@ -256,7 +256,7 @@ export function ChatInterface() {
             </div>
 
             {/* Input Area */}
-            <div className="pt-4 border-t border-zinc-800/50">
+            <div className="pt-4 border-t border-slate-200">
                 <form
                     onSubmit={(e) => {
                         e.preventDefault();
@@ -281,7 +281,7 @@ export function ChatInterface() {
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         placeholder="Ask about schemes..."
-                        className="flex-1 px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-500 focus:border-emerald-500/50 focus:outline-none text-sm transition-colors"
+                        className="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 text-sm transition-colors"
                         disabled={isLoading}
                         autoComplete="off"
                     />
@@ -289,12 +289,12 @@ export function ChatInterface() {
                     <button
                         type="submit"
                         disabled={isLoading || !input.trim()}
-                        className="px-5 py-3 bg-emerald-500 text-white rounded-xl font-medium text-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-400 transition-colors"
+                        className="px-5 py-3 bg-emerald-600 text-white rounded-xl font-medium text-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-500 transition-colors"
                     >
                         Send
                     </button>
                 </form>
-                <p className="text-zinc-600 text-xs mt-3 text-center">
+                <p className="text-slate-400 text-xs mt-3 text-center">
                     Speak or type in any language • Data is secure
                 </p>
             </div>

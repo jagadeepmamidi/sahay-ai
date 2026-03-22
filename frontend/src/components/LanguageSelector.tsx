@@ -43,9 +43,9 @@ export function LanguageSelector({
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
                     className="
-                        appearance-none bg-zinc-900 border border-zinc-800 text-zinc-100 
+                        appearance-none bg-white border border-slate-200 text-slate-700 
                         px-3 py-1.5 pr-8 rounded-lg text-sm cursor-pointer
-                        focus:outline-none focus:border-emerald-500/50
+                        focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100
                         transition-colors
                     "
                 >
@@ -56,7 +56,7 @@ export function LanguageSelector({
                     ))}
                 </select>
                 <svg 
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
                     fill="none" stroke="currentColor" viewBox="0 0 24 24"
                 >
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -74,8 +74,8 @@ export function LanguageSelector({
                     className={`
                         px-3 py-1.5 rounded-lg text-sm font-medium transition-all
                         ${value === lang.code 
-                            ? 'bg-emerald-500 text-white' 
-                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+                            ? 'bg-emerald-600 text-white' 
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-800'
                         }
                     `}
                 >
@@ -89,10 +89,10 @@ export function LanguageSelector({
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
                     className="
-                        appearance-none bg-zinc-800 text-zinc-400 
+                        appearance-none bg-slate-100 text-slate-600 
                         pl-3 pr-8 py-1.5 rounded-lg text-sm
-                        focus:outline-none focus:ring-2 focus:ring-emerald-500/50
-                        cursor-pointer hover:bg-zinc-700
+                        focus:outline-none focus:ring-2 focus:ring-emerald-100
+                        cursor-pointer hover:bg-slate-200
                         transition-colors
                     "
                 >
@@ -104,7 +104,7 @@ export function LanguageSelector({
                     ))}
                 </select>
                 <svg 
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
                     fill="none" stroke="currentColor" viewBox="0 0 24 24"
                 >
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -126,9 +126,9 @@ export function CurrentLanguageDisplay({ language, showFlag = true }: CurrentLan
         <div className="flex items-center gap-2">
             {showFlag && <span className="text-lg">{lang.flag}</span>}
             <div>
-                <span className="font-medium text-zinc-200">{lang.name}</span>
+                <span className="font-medium text-slate-800">{lang.name}</span>
                 {lang.nativeName !== lang.name && (
-                    <span className="text-zinc-500 text-sm ml-1">({lang.nativeName})</span>
+                    <span className="text-slate-500 text-sm ml-1">({lang.nativeName})</span>
                 )}
             </div>
         </div>

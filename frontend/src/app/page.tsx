@@ -145,7 +145,7 @@ export default function HomePage() {
                     One guided path from question to next step
                   </h2>
                   <p className="text-sm leading-7 text-slate-600">
-                    The product should feel calm and directional, not like another dense government portal.
+                    Simple steps that take you from question to action — no portal fatigue.
                   </p>
                 </div>
 
@@ -182,7 +182,7 @@ export default function HomePage() {
               A cleaner path through complex public programs
             </h2>
             <p className="max-w-2xl text-base leading-8 text-slate-600">
-              The homepage should immediately explain the product, show credibility, and make the next action obvious.
+              SAHAY combines AI search and multilingual chat so you spend less time on portals and more time applying.
             </p>
           </div>
 
@@ -205,10 +205,10 @@ export default function HomePage() {
           <div className="section-heading">
             <span className="kicker">Representative programs</span>
             <h2 className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-              Show real schemes, not just abstract promises
+              Popular schemes you can explore
             </h2>
             <p className="max-w-2xl text-base leading-8 text-slate-600">
-              A few recognizable examples help visitors quickly understand the kind of support they can explore.
+              Here are a few well-known programs. Ask SAHAY about any of them — or describe your situation to find more.
             </p>
           </div>
 
@@ -235,7 +235,7 @@ export default function HomePage() {
               Start with a short conversation and narrow the search quickly.
             </h2>
             <p className="mx-auto mt-4 max-w-2xl text-base leading-8 text-slate-600">
-              The next action should be obvious: ask a question, describe your situation, and move directly into recommendations.
+              Describe your family, work, and location — SAHAY will recommend matching schemes and guide you through next steps.
             </p>
             <div className="mt-8 flex justify-center">
               <Link href="/chat" className="btn-primary">

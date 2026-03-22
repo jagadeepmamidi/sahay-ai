@@ -10,13 +10,13 @@ export default function ChatPage() {
         <div className="max-w-4xl mx-auto px-6 py-8">
             <div className="mb-6">
                 <div className="flex items-center gap-3 mb-2">
-                    <h1 className="text-2xl font-semibold text-zinc-100">Chat with Sahay AI</h1>
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
+                    <h1 className="text-2xl font-semibold text-slate-950">Chat with Sahay AI</h1>
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-full">
                         <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                        <span className="text-emerald-400 text-xs">Online</span>
+                        <span className="text-emerald-700 text-xs font-medium">Online</span>
                     </div>
                 </div>
-                <p className="text-zinc-500 text-sm">Ask in English, Hindi, or any Indian language</p>
+                <p className="text-slate-500 text-sm">Ask in English, Hindi, or any Indian language</p>
             </div>
             <ChatInterface />
         </div>

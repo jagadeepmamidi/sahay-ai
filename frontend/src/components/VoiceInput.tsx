@@ -149,8 +149,8 @@ export function VoiceInputButton({
             className={`
                 ${sizeClasses[size]} rounded-xl transition-all duration-200
                 ${isRecording 
-                    ? 'bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse' 
-                    : 'glass-card text-zinc-400 hover:text-zinc-200'
+                    ? 'bg-red-50 text-red-500 border border-red-200 animate-pulse' 
+                    : 'bg-white border border-slate-200 text-slate-500 hover:text-slate-700 hover:border-slate-300'
                 }
                 ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
             `}
@@ -189,7 +189,7 @@ export function AudioPlayer({ src, language = 'en-IN', autoPlay = false }: Audio
             <audio ref={audioRef} src={src} lang={language} autoPlay={autoPlay} />
             <button
                 onClick={handlePlay}
-                className="p-2 glass-card text-zinc-400 hover:text-zinc-200 rounded-lg transition-colors"
+                className="p-2 bg-white border border-slate-200 text-slate-500 hover:text-slate-700 rounded-lg transition-colors"
                 title="Play Audio"
             >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

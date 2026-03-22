@@ -49,7 +49,20 @@ coverage/
 *.tmp
 nul
 
-# Non-essential project docs (keep only README.md and AGENTS.md)
+# Old root-level files (pre-restructure)
+/agent.py
+/app.py
+/ingest.py
+/interactions.jsonl
+/pm_kisan_rules.pdf
+/quick_start.bat
+/quick_start.sh
+/requirements.txt
+/sahay-ai-complete-code.md
+/script.py
+/script_[0-9]*.py
 Sahay_AI_Project_Proposal.md
 DATA_INGESTION.md
-sahay-ai-complete-code.md
+
+# Playwright MCP
+.playwright-mcp/
