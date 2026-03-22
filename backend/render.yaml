@@ -1,0 +1,60 @@
+# Sahay AI - Render Deployment Configuration
+
+services:
+  - type: web
+    name: sahay-api
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    disk:
+      name: chroma-data
+      mountPath: /app/data
+      sizeGB: 1
+    
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      
+      - key: DEBUG
+        value: false
+      
+      # Groq API (get from https://console.groq.com/)
+      - key: GROQ_API_KEY
+        sync: false
+      
+      # Sarvam AI (get from https://sarvam.ai/dashboard)
+      - key: SARVAM_API_KEY
+        sync: false
+      
+      # Supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      
+      # WhatsApp
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        generateValue: true
+      
+      # ChromaDB
+      - key: CHROMA_PERSIST_DIR
+        value: /app/data/chromadb
+      
+      # Rate Limiting
+      - key: RATE_LIMIT_PER_MINUTE
+        value: 30
+      
+      # CORS
+      - key: CORS_ORIGINS
+        value: "https://sahay-ai.vercel.app,http://localhost:3000"

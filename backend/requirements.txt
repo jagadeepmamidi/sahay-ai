@@ -1,0 +1,48 @@
+# Core dependencies
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-dotenv==1.0.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+
+# AI & LLM - Groq (primary LLM + English Whisper fallback)
+groq>=1.0.0
+
+# Sarvam AI (Telugu, Hindi, all Indian language STT / TTS / Translation)
+sarvamai>=0.1.0
+
+# HTTP client (version resolved by pip to satisfy groq + sarvamai + fastapi)
+httpx>=0.24.0
+
+# Vector Database - ChromaDB (local, persistent, free — no API key needed)
+chromadb>=0.5.0,<0.6.0
+
+# Embeddings - multilingual-e5-large (1024d, strong Indian language recall)
+sentence-transformers>=3.0.0
+
+# RAG
+rank-bm25>=0.2.2
+numpy>=1.24.0
+
+# Language detection
+langdetect==1.0.9
+
+# Translation fallback (Google Translate via deep-translator, no key needed)
+deep-translator==1.11.4
+
+# Document processing
+pypdf==3.17.4
+python-multipart==0.0.6
+
+# Data ingestion from HuggingFace
+datasets>=2.14.0
+
+# Retry / backoff (wraps Groq + Sarvam calls)
+tenacity>=8.2.3
+
+# Auth & rate limiting
+PyJWT>=2.8.0
+slowapi>=0.1.9
+
+# Async file I/O
+aiofiles==23.2.1
