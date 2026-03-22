@@ -168,10 +168,4 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-<div align="center">
 
-**🙏 Built with ❤️ for Indian Citizens**
-
-*Making government schemes accessible to everyone*
-
-</div>
