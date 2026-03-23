@@ -81,7 +81,15 @@ class VoiceService:
         """Map language code to Sarvam format."""
         if lang_code is None:
             return "unknown"
-        return SARVAM_LANGUAGE_MAP.get(lang_code.lower(), lang_code)
+        normalized = str(lang_code).lower().strip()
+        base = normalized.split("-")[0]
+        return SARVAM_LANGUAGE_MAP.get(base, normalized)
+
+    def _normalize_base_language(self, lang_code: Optional[str]) -> Optional[str]:
+        """Normalize language to base ISO code (e.g. en-IN -> en)."""
+        if not lang_code:
+            return None
+        return str(lang_code).lower().strip().split("-")[0]
 
     def _is_indian_language(self, lang_code: Optional[str]) -> bool:
         """Check if language is an Indian language supported by Sarvam AI.
@@ -91,11 +99,12 @@ class VoiceService:
         """
         if lang_code is None:
             return True  # Default to Sarvam for unknown/undetected languages
-        lang = lang_code.lower()
+        lang = str(lang_code).lower().strip()
+        base = lang.split("-")[0]
         # English in any form (en, en-US, en-IN, en-GB …) → Groq Whisper
-        if lang == "en" or lang.startswith("en-"):
+        if base == "en":
             return False
-        return lang in INDIAN_LANGUAGES
+        return base in INDIAN_LANGUAGES
 
     def transcribe_sarvam(
         self, audio_bytes: bytes, language_code: str = "unknown"
@@ -161,13 +170,25 @@ class VoiceService:
         audio_file = io.BytesIO(audio_bytes)
         audio_file.name = "audio.webm"
 
+        normalized_language = self._normalize_base_language(language)
+        # Whisper expects language codes like "en"; avoid sending unsupported/locale values.
+        groq_language = (
+            normalized_language
+            if normalized_language
+            in {"en", "es", "fr", "de", "it", "pt", "zh", "ja", "ko", "ru"}
+            else None
+        )
+
         result = self.groq_client.audio.transcriptions.create(
             file=audio_file,
             model=self.groq_whisper_model,
-            language=language if language and language != "unknown" else None,
+            language=groq_language,
             response_format="text",
         )
-        return result.text
+        # Groq may return plain text string for response_format="text".
+        if isinstance(result, str):
+            return result
+        return getattr(result, "text", str(result))
 
     def transcribe(
         self, audio_bytes: bytes, language_code: Optional[str] = None
@@ -186,6 +207,7 @@ class VoiceService:
             Transcribed text
         """
         lang = self._map_language(language_code)
+        base_lang = self._normalize_base_language(language_code)
 
         if self._is_indian_language(language_code):
             try:
@@ -194,9 +216,9 @@ class VoiceService:
                 return self.transcribe_sarvam_http(audio_bytes, lang)
             except Exception as e:
                 logger.warning(f"Sarvam STT failed: {e}, falling back to Groq")
-                return self.transcribe_groq(audio_bytes, language_code)
+                return self.transcribe_groq(audio_bytes, base_lang)
         else:
-            return self.transcribe_groq(audio_bytes, language_code)
+            return self.transcribe_groq(audio_bytes, base_lang)
 
     def text_to_speech(
         self,

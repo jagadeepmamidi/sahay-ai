@@ -26,7 +26,11 @@ logger = logging.getLogger(__name__)
 async def main():
     """Run the data ingestion pipeline."""
     from app.db.chroma import get_chroma_client
-    from app.pipeline.ingester import get_collection_stats, ingest_all_datasets
+    from app.pipeline.ingester import (
+        get_collection_stats,
+        ingest_all_datasets,
+        reindex_collection,
+    )
 
     logger.info("=" * 50)
     logger.info("Sahay AI - Data Ingestion Pipeline")
@@ -38,16 +42,24 @@ async def main():
 
     current_count = chroma.count()
     logger.info(f"Current chunks in database: {current_count}")
+    force_reindex = "--reindex" in sys.argv
 
-    if current_count > 0:
+    if current_count > 0 and not force_reindex:
         logger.info("Collection already has data. Skipping ingestion.")
+        logger.info("Run `python scripts/ingest_data.py --reindex` to rebuild it.")
         stats = get_collection_stats()
         logger.info(f"Total chunks: {stats['total_chunks']}")
         return
 
-    logger.info("\nIngesting configured HuggingFace datasets...")
+    logger.info(
+        "\nReindexing configured HuggingFace datasets..."
+        if force_reindex
+        else "\nIngesting configured HuggingFace datasets..."
+    )
     try:
-        results = await ingest_all_datasets()
+        results = (
+            await reindex_collection() if force_reindex else await ingest_all_datasets()
+        )
         for name, count in results.items():
             logger.info(f"  {name}: {count} chunks")
     except Exception as e:

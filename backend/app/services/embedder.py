@@ -40,7 +40,9 @@ class EmbedderService:
             f"Model loaded. Dimension: {self.model.get_sentence_embedding_dimension()}"
         )
 
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+    def embed_documents(
+        self, texts: List[str], batch_size: int = 96
+    ) -> List[List[float]]:
         """
         Embed documents/passages for storage.
 
@@ -52,7 +54,10 @@ class EmbedderService:
         """
         prefixed = [f"passage: {text}" for text in texts]
         embeddings = self.model.encode(
-            prefixed, normalize_embeddings=True, show_progress_bar=True
+            prefixed,
+            batch_size=batch_size,
+            normalize_embeddings=True,
+            show_progress_bar=True,
         )
         return embeddings.tolist()
 

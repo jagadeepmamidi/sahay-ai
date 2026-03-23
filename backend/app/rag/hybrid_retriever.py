@@ -9,6 +9,7 @@ Author: Jagadeep Mamidi
 """
 
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -60,8 +61,19 @@ class HybridRetriever:
                 f"ChromaDB initialization failed: {e}. Running BM25-only mode."
             )
 
+    def _sync_chroma_collection(self):
+        """Refresh the retriever's collection handle from the singleton client."""
+        try:
+            chroma = get_chroma_client()
+            self._chroma_client = chroma.client
+            self.chroma_collection = chroma.collection
+        except Exception as e:
+            logger.error(f"Failed to sync ChromaDB collection: {e}")
+            self.chroma_collection = None
+
     def _load_from_chromadb(self):
         """Load existing documents from ChromaDB to build BM25 index."""
+        self._sync_chroma_collection()
         if not self.chroma_collection:
             logger.info("No ChromaDB collection. Loading sample documents for BM25.")
             self._load_sample_documents()
@@ -86,6 +98,7 @@ class HybridRetriever:
                     }
                 )
 
+            self._append_sample_documents_if_missing()
             self._build_bm25_index()
             logger.info(
                 f"Loaded {len(self.documents)} documents from ChromaDB for BM25"
@@ -95,9 +108,25 @@ class HybridRetriever:
             logger.error(f"Failed to load from ChromaDB: {e}")
             self._load_sample_documents()
 
+    def _append_sample_documents_if_missing(self):
+        """
+        Ensure critical flagship schemes remain searchable in BM25 even when
+        Chroma contains a narrower domain dataset (e.g., scholarships only).
+        """
+        existing_ids = {doc["id"] for doc in self.documents}
+        for sample in self._get_sample_documents():
+            if sample["id"] not in existing_ids:
+                self.documents.append(sample)
+
     def _load_sample_documents(self):
         """Load sample scheme documents as fallback."""
-        sample_docs = [
+        self.documents = self._get_sample_documents()
+        self._build_bm25_index()
+        logger.info(f"Loaded {len(self.documents)} sample documents (fallback mode)")
+
+    def _get_sample_documents(self) -> List[Dict]:
+        """Return built-in sample scheme documents."""
+        return [
             {
                 "id": "pm-kisan-1",
                 "content": """PM-KISAN (Pradhan Mantri Kisan Samman Nidhi) is a Central Sector scheme with 100%
@@ -142,21 +171,68 @@ class HybridRetriever:
             },
         ]
 
-        self.documents = sample_docs
-        self._build_bm25_index()
-        logger.info(f"Loaded {len(self.documents)} sample documents (fallback mode)")
-
     def _build_bm25_index(self):
         """Build BM25 index from current documents."""
         if not self.documents:
             return
 
         self.tokenized_corpus = [
-            doc["content"].lower().split() for doc in self.documents
+            self._tokenize_for_search(doc) for doc in self.documents
         ]
 
         self.bm25 = BM25Okapi(self.tokenized_corpus)
         logger.info(f"BM25 index built with {len(self.tokenized_corpus)} documents")
+
+    def _normalize_search_text(self, text: str) -> str:
+        """Normalize text so hyphenated scheme names match natural user queries."""
+        cleaned = (text or "").lower()
+        cleaned = re.sub(r"[-_/]", " ", cleaned)
+        cleaned = re.sub(r"[^a-z0-9\s]", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        return cleaned.strip()
+
+    def _tokenize_text(self, text: str) -> List[str]:
+        """Tokenize text for BM25 using normalized alphanumeric terms."""
+        normalized = self._normalize_search_text(text)
+        return [token for token in normalized.split() if token]
+
+    def _tokenize_for_search(self, doc: Dict) -> List[str]:
+        """Include scheme metadata in BM25 so exact scheme-name searches rank correctly."""
+        metadata = doc.get("metadata") or {}
+        searchable_parts = [
+            doc.get("content", ""),
+            metadata.get("scheme_name", ""),
+            metadata.get("scheme_id", ""),
+            metadata.get("category", ""),
+            metadata.get("benefit_summary", ""),
+            metadata.get("eligibility_summary", ""),
+        ]
+        return self._tokenize_text(
+            " ".join(str(part) for part in searchable_parts if part)
+        )
+
+    def _scheme_match_boost(self, query: str, doc: Dict) -> float:
+        """Boost results that explicitly mention the queried scheme name."""
+        normalized_query = self._normalize_search_text(query)
+        if not normalized_query:
+            return 0.0
+
+        query_tokens = set(normalized_query.split())
+        metadata = doc.get("metadata") or {}
+        searchable = " ".join(
+            [
+                self._normalize_search_text(doc.get("content", "")),
+                self._normalize_search_text(str(metadata.get("scheme_name", ""))),
+                self._normalize_search_text(str(metadata.get("scheme_id", ""))),
+            ]
+        )
+        searchable_tokens = set(searchable.split())
+
+        if normalized_query in searchable:
+            return 0.35
+        if query_tokens and query_tokens.issubset(searchable_tokens):
+            return 0.2
+        return 0.0
 
     def _embed_text(self, query: str) -> Optional[List[float]]:
         """
@@ -208,10 +284,11 @@ class HybridRetriever:
 
         # Add to BM25
         self.documents.append(doc)
-        self.tokenized_corpus.append(content.lower().split())
+        self.tokenized_corpus.append(self._tokenize_for_search(doc))
         self.bm25 = BM25Okapi(self.tokenized_corpus)
 
         # Add to ChromaDB with passage embedding (multilingual-e5-large, 'passage: ' prefix)
+        self._sync_chroma_collection()
         if self.chroma_collection:
             try:
                 embedding = self._embed_document(content)
@@ -251,10 +328,11 @@ class HybridRetriever:
         # Add to BM25
         for doc in documents:
             self.documents.append(doc)
-            self.tokenized_corpus.append(doc["content"].lower().split())
+            self.tokenized_corpus.append(self._tokenize_for_search(doc))
         self.bm25 = BM25Okapi(self.tokenized_corpus)
 
         # Add to ChromaDB in batch
+        self._sync_chroma_collection()
         if self.chroma_collection:
             try:
                 embeddings = self._embed_texts_batch(contents)
@@ -296,14 +374,16 @@ class HybridRetriever:
             return vector_results[:top_k]
 
         # Merge and re-rank
-        return self._merge_results(bm25_results, vector_results, alpha, top_k)
+        return self._merge_results(bm25_results, vector_results, query, alpha, top_k)
 
     def _bm25_search(self, query: str, top_k: int = 10) -> List[Dict]:
         """BM25 keyword search."""
         if not self.bm25 or not self.documents:
             return []
 
-        tokenized_query = query.lower().split()
+        tokenized_query = self._tokenize_text(query)
+        if not tokenized_query:
+            return []
         scores = self.bm25.get_scores(tokenized_query)
 
         # Normalize scores
@@ -320,15 +400,18 @@ class HybridRetriever:
                 results.append(
                     {
                         **self.documents[idx],
-                        "score": float(normalized[idx]),
+                        "score": float(normalized[idx])
+                        + self._scheme_match_boost(query, self.documents[idx]),
                         "search_type": "bm25",
                     }
                 )
 
+        results.sort(key=lambda doc: doc["score"], reverse=True)
         return results
 
     def _vector_search(self, query: str, top_k: int = 10) -> List[Dict]:
         """ChromaDB vector similarity search."""
+        self._sync_chroma_collection()
         if not self.chroma_collection or self.chroma_collection.count() == 0:
             return []
 
@@ -377,6 +460,7 @@ class HybridRetriever:
         self,
         bm25_results: List[Dict],
         vector_results: List[Dict],
+        query: str,
         alpha: float,
         top_k: int,
     ) -> List[Dict]:
@@ -412,7 +496,9 @@ class HybridRetriever:
 
         # Calculate combined scores
         for doc_id, doc in combined.items():
-            doc["score"] = (1 - alpha) * doc["bm25_score"] + alpha * doc["vector_score"]
+            doc["score"] = (
+                (1 - alpha) * doc["bm25_score"] + alpha * doc["vector_score"]
+            ) + self._scheme_match_boost(query, doc)
 
         # Sort by combined score
         ranked = sorted(combined.values(), key=lambda x: x["score"], reverse=True)
@@ -438,6 +524,7 @@ class HybridRetriever:
 
     def get_stats(self) -> Dict:
         """Get retriever statistics."""
+        self._sync_chroma_collection()
         chroma_count = 0
         if self.chroma_collection:
             try:

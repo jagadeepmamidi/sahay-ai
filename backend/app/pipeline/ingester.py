@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 async def ingest_documents(
-    documents: List[Dict[str, Any]], batch_size: int = 32, show_progress: bool = True
+    documents: List[Dict[str, Any]], batch_size: int = 96, show_progress: bool = True
 ) -> int:
     """
     Ingest documents into ChromaDB with embeddings.
@@ -40,38 +40,34 @@ async def ingest_documents(
     chunks = chunk_documents(documents)
     logger.info(f"Created {len(chunks)} chunks")
 
-    ids = []
-    embeddings = []
-    texts = []
-    metadatas = []
-
     total_chunks = len(chunks)
 
     for i in range(0, total_chunks, batch_size):
         batch = chunks[i : i + batch_size]
 
         texts_batch = [chunk["text"] for chunk in batch]
-        embeddings_batch = embedder.embed_documents(texts_batch)
+        embeddings_batch = embedder.embed_documents(texts_batch, batch_size=batch_size)
+        ids_batch = [chunk["id"] for chunk in batch]
+        metadatas_batch = [chunk["metadata"] for chunk in batch]
 
-        for j, chunk in enumerate(batch):
-            ids.append(chunk["id"])
-            embeddings.append(embeddings_batch[j])
-            texts.append(chunk["text"])
-            metadatas.append(chunk["metadata"])
+        chroma.upsert(
+            ids=ids_batch,
+            embeddings=embeddings_batch,
+            documents=texts_batch,
+            metadatas=metadatas_batch,
+        )
 
         if show_progress:
             logger.info(
                 f"Processed {min(i + batch_size, total_chunks)}/{total_chunks} chunks"
             )
 
-    chroma.upsert(ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas)
-
     logger.info(f"Successfully ingested {len(chunks)} chunks into ChromaDB")
     return len(chunks)
 
 
 async def ingest_huggingface_dataset(
-    dataset_name: str = "gov_myscheme", batch_size: int = 32
+    dataset_name: str = "indian_gov_schemes", batch_size: int = 96
 ) -> int:
     """
     Load and ingest a HuggingFace dataset directly.
@@ -94,7 +90,7 @@ async def ingest_huggingface_dataset(
     return await ingest_documents(documents, batch_size=batch_size)
 
 
-async def ingest_all_datasets(batch_size: int = 32) -> Dict[str, int]:
+async def ingest_all_datasets(batch_size: int = 96) -> Dict[str, int]:
     """
     Load and ingest all available datasets.
 

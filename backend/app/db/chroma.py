@@ -52,6 +52,23 @@ class ChromaDBClient:
                 f"at {self.persist_dir}."
             ) from exc
 
+    def _create_or_get_collection(self):
+        """Refresh the collection handle if it was deleted during a reset/reindex."""
+        self.collection = self.client.get_or_create_collection(
+            name=self.collection_name, metadata={"hnsw:space": "cosine"}
+        )
+        return self.collection
+
+    def _with_collection_retry(self, operation):
+        """Retry once with a refreshed collection if the old handle no longer exists."""
+        try:
+            return operation(self.collection)
+        except Exception as exc:
+            if "does not exist" not in str(exc).lower():
+                raise
+            refreshed = self._create_or_get_collection()
+            return operation(refreshed)
+
     def upsert(
         self,
         ids: List[str],
@@ -60,8 +77,13 @@ class ChromaDBClient:
         metadatas: List[Dict[str, Any]],
     ) -> None:
         """Insert or update vectors in the collection."""
-        self.collection.upsert(
-            ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas
+        self._with_collection_retry(
+            lambda collection: collection.upsert(
+                ids=ids,
+                embeddings=embeddings,
+                documents=documents,
+                metadatas=metadatas,
+            )
         )
 
     def query(
@@ -72,12 +94,14 @@ class ChromaDBClient:
         where_document: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """Query the collection for similar vectors."""
-        return self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=n_results,
-            where=where,
-            where_document=where_document,
-            include=["documents", "metadatas", "distances"],
+        return self._with_collection_retry(
+            lambda collection: collection.query(
+                query_embeddings=[query_embedding],
+                n_results=n_results,
+                where=where,
+                where_document=where_document,
+                include=["documents", "metadatas", "distances"],
+            )
         )
 
     def get(
@@ -87,25 +111,30 @@ class ChromaDBClient:
         limit: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Get vectors by ID or filter."""
-        return self.collection.get(
-            ids=ids, where=where, limit=limit, include=["documents", "metadatas"]
+        return self._with_collection_retry(
+            lambda collection: collection.get(
+                ids=ids, where=where, limit=limit, include=["documents", "metadatas"]
+            )
         )
 
     def count(self) -> int:
         """Get total number of vectors in collection."""
-        return self.collection.count()
+        return self._with_collection_retry(lambda collection: collection.count())
 
     def delete(self, ids: List[str]) -> None:
         """Delete vectors by ID."""
-        self.collection.delete(ids=ids)
+        self._with_collection_retry(lambda collection: collection.delete(ids=ids))
 
     def reset(self) -> None:
         """Reset the collection (deletes all data)."""
         self.client.reset()
+        self._create_or_get_collection()
 
     def peek(self, limit: int = 10) -> Dict[str, Any]:
         """Peek at first N items in collection."""
-        return self.collection.peek(limit=limit)
+        return self._with_collection_retry(
+            lambda collection: collection.peek(limit=limit)
+        )
 
 
 _chroma_client: Optional[ChromaDBClient] = None
