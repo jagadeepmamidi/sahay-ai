@@ -1,40 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { getSchemes, getCategories, getSchemeDetails } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { X } from "@phosphor-icons/react";
+import { getCategories, getSchemeDetails, getSchemes } from "@/lib/api";
 import { Scheme, SchemeListItem } from "@/types";
 
 function formatCategoryLabel(category: string) {
-  const primaryCategory = category.split(",")[0]?.replace(/\s+/g, " ").trim();
-  return primaryCategory || "General";
-}
-
-function dedupeCategories(values: string[]) {
-  return Array.from(new Set(values.map(formatCategoryLabel)));
-}
-
-function cleanInlineLinks(text: string) {
-  return text
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, "$1: $2")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function formatApplicationSteps(text: string) {
-  const cleaned = cleanInlineLinks(text);
-  if (!cleaned) {
-    return [];
-  }
-
-  const numberedMatches = cleaned.match(/\d+\.\s.*?(?=\s+\d+\.\s|$)/g);
-  if (numberedMatches && numberedMatches.length > 0) {
-    return numberedMatches.map((step) => step.replace(/^\d+\.\s*/, "").trim());
-  }
-
-  return cleaned
-    .split(/(?<=[.!?])\s+(?=[A-Z])/)
-    .map((step) => step.trim())
-    .filter(Boolean);
+  return category.split(",")[0]?.replace(/\s+/g, " ").trim() || "General";
 }
 
 export default function SchemesPage() {
@@ -45,50 +17,40 @@ export default function SchemesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [selectedScheme, setSelectedScheme] = useState<Scheme | null>(null);
   const [isDetailsLoading, setIsDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState("");
 
-  const applicationSteps = selectedScheme
-    ? formatApplicationSteps(selectedScheme.application_process || "")
-    : [];
-
   useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const data = (await getCategories()) as { categories: string[] };
-        setCategories(["All", ...dedupeCategories(data.categories)]);
-      } catch (err) {
-        console.error("Failed to fetch categories:", err);
-      }
-    };
-    fetchCategories();
+    getCategories()
+      .then((data) => {
+        const payload = data as { categories: string[] };
+        setCategories(["All", ...payload.categories]);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
-    const fetchSchemes = async () => {
+    const timer = setTimeout(async () => {
       setIsLoading(true);
       try {
         const data = (await getSchemes(
           page,
-          10,
+          12,
           activeCategory === "All" ? undefined : activeCategory,
           undefined,
           search || undefined,
-        )) as { schemes: SchemeListItem[]; total_pages: number };
+        )) as { schemes: SchemeListItem[]; total_pages: number; total: number };
         setSchemes(data.schemes);
         setTotalPages(data.total_pages);
-      } catch (err) {
-        console.error("Failed to fetch schemes:", err);
+        setTotal(data.total);
+      } catch (error) {
+        console.error(error);
       } finally {
         setIsLoading(false);
       }
-    };
-
-    const timer = setTimeout(() => {
-      fetchSchemes();
-    }, 300);
-
+    }, 250);
     return () => clearTimeout(timer);
   }, [page, activeCategory, search]);
 
@@ -96,234 +58,163 @@ export default function SchemesPage() {
     setIsDetailsLoading(true);
     setDetailsError("");
     try {
-      const details = (await getSchemeDetails(schemeId)) as Scheme;
-      setSelectedScheme(details);
-    } catch (err) {
-      console.error("Failed to fetch scheme details:", err);
-      setDetailsError("Failed to load scheme details. Please try again.");
+      setSelectedScheme((await getSchemeDetails(schemeId)) as Scheme);
+    } catch {
+      setDetailsError("Could not load this scheme. Try again.");
     } finally {
       setIsDetailsLoading(false);
     }
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-12">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-semibold text-slate-950 mb-2">
-          Government Schemes
-        </h1>
-        <p className="text-slate-500 text-sm">
-          Browse official schemes across categories
-        </p>
-      </div>
+    <div className="shell py-10 md:py-14">
+      <h1 className="max-w-2xl text-4xl font-semibold tracking-tight">Scheme catalog</h1>
+      <p className="lede mt-3">
+        {total ? `${total} curated central schemes.` : "Flagship central schemes with official apply links."}
+      </p>
 
-      {/* Search */}
-      <div className="mb-6">
+      <div className="mt-8">
         <input
-          type="text"
-          placeholder="Search schemes..."
           value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
+          onChange={(event) => {
+            setSearch(event.target.value);
             setPage(1);
           }}
-          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 text-sm transition-colors"
+          placeholder="Search by name, benefit, or keyword"
+          aria-label="Search schemes"
         />
       </div>
 
-      {/* Categories */}
-      <div className="mb-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 mb-3">
-          Browse by Topic
-        </p>
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => {
-                setActiveCategory(cat);
-                setPage(1);
-              }}
-              className={`whitespace-nowrap rounded-full px-4 py-2.5 text-sm transition-colors ${
-                activeCategory === cat
-                  ? "bg-emerald-600 text-white shadow-sm"
-                  : "bg-slate-100 text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-              }`}
-            >
-              {formatCategoryLabel(cat)}
-            </button>
-          ))}
-        </div>
+      <div className="mt-5 flex gap-2 overflow-x-auto pb-2">
+        {categories.map((category) => (
+          <button
+            key={category}
+            type="button"
+            onClick={() => {
+              setActiveCategory(category);
+              setPage(1);
+            }}
+            className={`whitespace-nowrap rounded-full px-4 py-2 text-sm ${
+              activeCategory === category
+                ? "bg-[var(--forest)] text-[#f6f3ea]"
+                : "border border-[var(--line)]"
+            }`}
+          >
+            {formatCategoryLabel(category)}
+          </button>
+        ))}
       </div>
 
-      {/* Schemes Grid */}
       {isLoading ? (
-        <div className="grid md:grid-cols-2 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="glass-card p-6 animate-pulse">
-              <div className="h-4 w-20 bg-slate-200 rounded mb-3" />
-              <div className="h-5 w-3/4 bg-slate-200 rounded mb-3" />
-              <div className="h-4 w-full bg-slate-200 rounded" />
-            </div>
+        <div className="mt-8 grid gap-4 md:grid-cols-2">
+          {[1, 2, 3, 4].map((item) => (
+            <div key={item} className="h-40 animate-pulse rounded-[1.5rem] bg-[var(--surface-2)]" />
           ))}
         </div>
       ) : schemes.length > 0 ? (
-        <>
-          <div className="grid md:grid-cols-2 gap-4">
-            {schemes.map((scheme) => (
-              <button
-                key={scheme.id}
-                type="button"
-                onClick={() => openSchemeDetails(scheme.id)}
-                className="glass-card p-6 group hover:border-emerald-200 transition-colors text-left h-full"
-              >
-                <div className="mb-4">
-                  <span className="inline-flex max-w-full rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                    {formatCategoryLabel(scheme.category)}
-                  </span>
-                </div>
-                <h3 className="text-slate-800 font-medium text-lg group-hover:text-emerald-700 transition-colors leading-snug break-words mb-3">
-                  {scheme.name}
-                </h3>
-                <p className="text-slate-500 text-sm line-clamp-3 leading-relaxed">
-                  {scheme.eligibility_summary || "Click for details"}
+        <div className="mt-8 grid gap-4 md:grid-cols-2">
+          {schemes.map((scheme) => (
+            <button
+              key={scheme.id}
+              type="button"
+              onClick={() => openSchemeDetails(scheme.id)}
+              className="bezel text-left"
+            >
+              <div className="bezel-inner p-6">
+                <p className="scheme-chip">{formatCategoryLabel(scheme.category)}</p>
+                <h2 className="mt-4 text-xl font-semibold leading-snug">{scheme.name}</h2>
+                <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+                  {scheme.eligibility_summary || "Open for full details"}
                 </p>
                 {scheme.benefit_summary && (
-                  <p className="text-emerald-600 text-sm mt-4">
-                    Benefit: {scheme.benefit_summary}
-                  </p>
+                  <p className="mt-4 text-sm font-medium">{scheme.benefit_summary}</p>
                 )}
-              </button>
-            ))}
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex justify-center items-center gap-6 mt-12">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="text-slate-500 hover:text-emerald-600 disabled:opacity-30 disabled:hover:text-slate-500 transition-colors text-sm"
-              >
-                ← Previous
-              </button>
-              <span className="text-slate-400 text-sm">
-                Page {page} of {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="text-slate-500 hover:text-emerald-600 disabled:opacity-30 disabled:hover:text-slate-500 transition-colors text-sm"
-              >
-                Next →
-              </button>
-            </div>
-          )}
-        </>
+              </div>
+            </button>
+          ))}
+        </div>
       ) : (
-        <div className="text-center py-20 glass-card">
-          <p className="text-slate-600 text-lg mb-2">No results found</p>
-          <p className="text-slate-400 text-sm">
-            Try adjusting your search or category filters.
-          </p>
+        <div className="bezel mt-10">
+          <div className="bezel-inner p-10 text-center">
+            <p className="font-semibold">No schemes matched that search</p>
+            <p className="mt-2 text-sm text-[var(--muted)]">Try a scheme name or clear the category filter.</p>
+          </div>
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="mt-10 flex items-center justify-center gap-6 text-sm">
+          <button type="button" disabled={page === 1} onClick={() => setPage((value) => value - 1)}>
+            Previous
+          </button>
+          <span className="text-[var(--faint)]">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={page === totalPages}
+            onClick={() => setPage((value) => value + 1)}
+          >
+            Next
+          </button>
         </div>
       )}
 
       {(isDetailsLoading || selectedScheme || detailsError) && (
-        <div className="fixed inset-0 z-50 bg-slate-950/30 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl bg-white border border-slate-200 rounded-2xl shadow-xl p-6 max-h-[80vh] overflow-y-auto">
-            <div className="flex items-start justify-between mb-4">
-              <h2 className="text-xl font-semibold text-slate-900">
-                Scheme details
-              </h2>
+        <div className="fixed inset-0 z-40 flex items-end justify-center bg-[rgba(17,22,19,0.45)] p-0 md:items-center md:p-6">
+          <div className="max-h-[88dvh] w-full max-w-2xl overflow-y-auto rounded-t-[1.8rem] bg-[var(--surface)] p-6 md:rounded-[1.8rem]">
+            <div className="flex items-start justify-between gap-4">
+              <h2 className="text-xl font-semibold">Scheme details</h2>
               <button
                 type="button"
+                className="icon-btn"
+                aria-label="Close details"
                 onClick={() => {
                   setSelectedScheme(null);
                   setDetailsError("");
                   setIsDetailsLoading(false);
                 }}
-                className="text-slate-500 hover:text-slate-700"
               >
-                Close
+                <X size={16} />
               </button>
             </div>
-
-            {isDetailsLoading && (
-              <p className="text-slate-500 text-sm">Loading details...</p>
-            )}
-
-            {!isDetailsLoading && detailsError && (
-              <p className="text-red-600 text-sm">{detailsError}</p>
-            )}
-
-            {!isDetailsLoading && selectedScheme && (
-              <div className="space-y-4">
-                <div className="space-y-3">
-                  <span className="inline-flex max-w-full rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                    {formatCategoryLabel(selectedScheme.category)}
-                  </span>
-                  <h3 className="text-xl font-semibold text-slate-900 leading-snug break-words">
-                    {selectedScheme.name}
-                  </h3>
-                </div>
-                <p className="text-slate-700 text-sm leading-relaxed">
-                  {selectedScheme.description || "No description available."}
-                </p>
+            {isDetailsLoading && <p className="mt-6 text-sm text-[var(--muted)]">Loading details...</p>}
+            {detailsError && <p className="mt-6 text-sm text-red-700">{detailsError}</p>}
+            {selectedScheme && !isDetailsLoading && (
+              <div className="mt-5 space-y-5">
+                <p className="scheme-chip">{formatCategoryLabel(selectedScheme.category)}</p>
+                <h3 className="text-2xl font-semibold">{selectedScheme.name}</h3>
+                <p className="text-sm leading-7 text-[var(--muted)]">{selectedScheme.description}</p>
                 <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">
+                  <div className="rounded-2xl bg-[var(--paper)] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--faint)]">
                       Benefit
                     </p>
-                    <p className="text-sm text-emerald-700 leading-relaxed">
-                      {selectedScheme.benefit_amount ||
-                        selectedScheme.benefits ||
-                        "Not specified"}
+                    <p className="mt-2 text-sm">
+                      {selectedScheme.benefit_amount || selectedScheme.benefits || "See official page"}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">
+                  <div className="rounded-2xl bg-[var(--paper)] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--faint)]">
                       Eligibility
                     </p>
-                    <p className="text-sm text-slate-600 leading-relaxed">
-                      {selectedScheme.eligibility_summary ||
-                        "Refer official guidelines"}
-                    </p>
+                    <p className="mt-2 text-sm">{selectedScheme.eligibility_summary}</p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">
-                      How to Apply
-                    </p>
-                    {applicationSteps.length > 0 ? (
-                      <ol className="space-y-2 text-sm text-slate-600 leading-relaxed">
-                        {applicationSteps.map((step, index) => (
-                          <li
-                            key={`${selectedScheme.id}-step-${index}`}
-                            className="flex gap-3"
-                          >
-                            <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-[11px] font-semibold text-slate-500 border border-slate-200">
-                              {index + 1}
-                            </span>
-                            <span className="break-words">{step}</span>
-                          </li>
-                        ))}
-                      </ol>
-                    ) : (
-                      <p className="text-sm text-slate-600 leading-relaxed">
-                        Refer official portal
-                      </p>
-                    )}
-                  </div>
+                </div>
+                <div className="rounded-2xl bg-[var(--paper)] p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--faint)]">
+                    How to apply
+                  </p>
+                  <p className="mt-2 text-sm leading-7">{selectedScheme.application_process}</p>
                 </div>
                 {selectedScheme.apply_url && (
                   <a
                     href={selectedScheme.apply_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+                    className="btn btn-primary"
                   >
-                    Open official link
+                    Open official page
                   </a>
                 )}
               </div>

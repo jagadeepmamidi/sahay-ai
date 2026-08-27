@@ -1,24 +1,32 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { IBM_Plex_Mono, Outfit } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
+import { ThemeScript } from "@/components/ThemeScript";
 
-const inter = Inter({
+const outfit = Outfit({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-outfit",
+  display: "swap",
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const ibmPlex = IBM_Plex_Mono({
   subsets: ["latin"],
-  variable: "--font-jetbrains",
-  weight: ["400", "500", "600"],
+  weight: ["400", "500"],
+  variable: "--font-ibm",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "SAHAY.AI - Government Scheme Discovery",
+  title: "Sahay - Find the government scheme that fits",
   description:
-    "AI-assisted platform to help Indian citizens discover relevant government schemes and understand likely eligibility.",
+    "Sahay helps Indian citizens find central welfare schemes, understand likely eligibility, and reach the official apply page.",
+  openGraph: {
+    title: "Sahay - Find the government scheme that fits",
+    description:
+      "Ask in plain language. Get scheme matches with benefits, documents, and official links.",
+  },
 };
 
 export default function RootLayout({
@@ -27,18 +35,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${inter.className} ${jetbrainsMono.variable} antialiased`}>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <ThemeScript />
+      </head>
+      <body className={`${outfit.variable} ${ibmPlex.variable} ${outfit.className}`}>
         <a href="#main-content" className="skip-link">
           Skip to content
         </a>
-        <div className="flex min-h-screen flex-col">
-          <Navbar />
-          <main id="main-content" className="flex-1">
-            {children}
-          </main>
-          <Footer />
-        </div>
+        <Navbar />
+        <main id="main-content">{children}</main>
+        <Footer />
       </body>
     </html>
   );

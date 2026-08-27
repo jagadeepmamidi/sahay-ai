@@ -1,247 +1,196 @@
-'use client';
+import { ArrowUpRight, ChatText, IdentificationCard, MagnifyingGlass } from "@phosphor-icons/react/dist/ssr";
+import Image from "next/image";
+import Link from "next/link";
 
-import Link from 'next/link';
-
-const stats = [
-  { value: '500+', label: 'Schemes indexed' },
-  { value: '10+', label: 'Indian languages' },
-  { value: '1M+', label: 'Citizens supported' },
-];
-
-const features = [
+const mosaic = [
   {
-    title: 'AI-guided scheme discovery',
-    description:
-      'Share your location, occupation, income range, and needs. SAHAY narrows large government catalogs into the programs worth your time.',
-    icon: 'discovery',
+    title: "PM-KISAN",
+    detail: "Rs. 6,000 a year for landholding farmer families.",
+    href: "/schemes",
+    image: "/images/sahay-agriculture.png",
+    label: "Agriculture",
   },
   {
-    title: 'Multilingual conversation',
-    description:
-      'Users can ask questions in Hindi, Tamil, Telugu, Bengali, or English without switching tools or translating government terms manually.',
-    icon: 'language',
+    title: "Ayushman Bharat",
+    detail: "Up to Rs. 5 lakh hospital cover per eligible family.",
+    href: "/schemes",
+    image: "/images/sahay-health.png",
+    label: "Health",
   },
   {
-    title: 'Eligibility pre-check',
-    description:
-      'Simple guided questions help users understand whether they likely qualify before they gather documents or visit an office.',
-    icon: 'eligibility',
-  },
-];
-
-const schemes = [
-  {
-    name: 'PM-KISAN',
-    category: 'Agriculture',
-    description: 'Income support of Rs. 6,000 per year for eligible farmer families.',
+    title: "PMAY-G",
+    detail: "Support to build a pucca house in rural areas.",
+    href: "/schemes",
+    image: "/images/sahay-housing.png",
+    label: "Housing",
   },
   {
-    name: 'Ayushman Bharat',
-    category: 'Health',
-    description: 'Health coverage of Rs. 5 lakh per family per year for eligible households.',
-  },
-  {
-    name: 'PM Awas Yojana',
-    category: 'Housing',
-    description: 'Housing support with subsidized financing for qualifying urban and rural applicants.',
+    title: "Scholarships",
+    detail: "Central student aid through the National Scholarship Portal.",
+    href: "/schemes",
+    image: "/images/sahay-education.png",
+    label: "Education",
   },
 ];
 
-const journeySteps = [
-  'Describe your family, work, and location in plain language.',
-  'Review recommended schemes with plain-language summaries.',
-  'Check likely eligibility and prepare for next application steps.',
+const languages = [
+  "English",
+  "Hindi",
+  "Telugu",
+  "Tamil",
+  "Bengali",
+  "Marathi",
+  "Gujarati",
+  "Kannada",
+  "Malayalam",
+  "Punjabi",
+  "Odia",
 ];
-
-function FeatureIcon({ icon }: { icon: string }) {
-  if (icon === 'discovery') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
-        <path
-          d="M11 4a7 7 0 1 0 4.89 12.01L20 20.12"
-          fill="none"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.8"
-        />
-      </svg>
-    );
-  }
-
-  if (icon === 'language') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
-        <path
-          d="M4 6h10M9 6c0 5-2 8-5 10m4-5c1.5 2.3 3.6 4.2 6 5M15 6l5 12m-1.5-3.5h-6.8"
-          fill="none"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.8"
-        />
-      </svg>
-    );
-  }
-
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
-      <path
-        d="M5 12.5 9.2 17 19 7.5"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.8"
-      />
-    </svg>
-  );
-}
 
 export default function HomePage() {
   return (
-    <div className="relative overflow-hidden">
-      <section className="px-6 pt-14 pb-16 md:pt-20 md:pb-20">
-        <div className="hero-shell mx-auto max-w-6xl">
-          <div className="hero-grid">
-            <div className="space-y-8">
-              <span className="kicker">Government scheme discovery, without portal fatigue</span>
-              <div className="max-w-3xl space-y-5">
-                <p className="text-sm font-semibold uppercase tracking-[0.3em] text-emerald-700/80">
-                  SAHAY.AI
-                </p>
-                <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl lg:text-6xl lg:leading-[1.05]">
-                  Find the right government scheme faster, with AI that speaks your language.
-                </h1>
-                <p className="max-w-2xl text-base leading-8 text-slate-600 sm:text-lg">
-                  SAHAY helps citizens navigate large welfare catalogs, understand likely eligibility,
-                  and move toward the next application step with less confusion and less guesswork.
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Link href="/chat" className="btn-primary gap-2">
-                  Start chat
-                </Link>
-                <Link href="/schemes" className="btn-outline">
-                  Browse schemes
-                </Link>
-              </div>
-
-              <div className="flex flex-wrap gap-3 text-sm text-slate-600">
-                <span className="chip">Plain-language recommendations</span>
-                <span className="chip">Regional language support</span>
-                <span className="chip">Eligibility guidance</span>
-              </div>
-            </div>
-
-            <aside className="surface-accent p-6 md:p-8">
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-emerald-700/80">
-                    How SAHAY helps
-                  </p>
-                  <h2 className="text-2xl font-semibold tracking-tight text-slate-950">
-                    One guided path from question to next step
-                  </h2>
-                  <p className="text-sm leading-7 text-slate-600">
-                    Simple steps that take you from question to action — no portal fatigue.
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  {journeySteps.map((step, index) => (
-                    <div key={step} className="flex gap-4 rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-700">
-                        0{index + 1}
-                      </div>
-                      <p className="text-sm leading-7 text-slate-700">{step}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-                  {stats.map((stat) => (
-                    <div key={stat.label} className="stat-card">
-                      <p className="text-2xl font-semibold tracking-tight text-slate-950">{stat.value}</p>
-                      <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">{stat.label}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </aside>
+    <div>
+      <section className="shell grid min-h-[calc(100dvh-6.5rem)] items-center gap-10 pt-10 pb-16 lg:grid-cols-[1.05fr_0.95fr] lg:pt-14">
+        <div>
+          <p className="kicker">Public scheme guide</p>
+          <h1 className="display mt-5">Find the scheme that actually fits you.</h1>
+          <p className="lede mt-5">
+            Ask in plain language. Get official benefits, documents, and the apply link.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link href="/chat" className="btn btn-primary">
+              Ask Sahay
+              <span className="btn-icon">
+                <ArrowUpRight size={16} />
+              </span>
+            </Link>
+            <Link href="/schemes" className="btn btn-ghost">
+              Browse catalog
+            </Link>
+          </div>
+        </div>
+        <div className="bezel h-[min(520px,62dvh)]">
+          <div className="bezel-inner relative h-full">
+            <Image
+              src="/images/sahay-hero-desk.png"
+              alt="A citizen speaking with a help-desk officer in a small-town office"
+              fill
+              priority
+              className="photo"
+              sizes="(min-width: 1024px) 48vw, 100vw"
+            />
           </div>
         </div>
       </section>
 
-      <section className="px-6 pb-20 md:pb-24">
-        <div className="mx-auto max-w-6xl">
-          <div className="section-heading">
-            <span className="kicker">What you can do here</span>
-            <h2 className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-              A cleaner path through complex public programs
-            </h2>
-            <p className="max-w-2xl text-base leading-8 text-slate-600">
-              SAHAY combines AI search and multilingual chat so you spend less time on portals and more time applying.
-            </p>
-          </div>
-
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
-            {features.map((feature) => (
-              <article key={feature.title} className="glass-card p-7">
-                <div className="icon-badge">
-                  <FeatureIcon icon={feature.icon} />
-                </div>
-                <h3 className="mt-5 text-xl font-semibold tracking-tight text-slate-950">{feature.title}</h3>
-                <p className="mt-3 text-sm leading-7 text-slate-600">{feature.description}</p>
-              </article>
-            ))}
+      <section className="shell grid gap-8 pb-24 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="bezel">
+          <div className="bezel-inner relative min-h-[320px]">
+            <Image
+              src="/images/sahay-agriculture.png"
+              alt="A farmer standing in a paddy field at dusk"
+              fill
+              className="photo"
+              sizes="(min-width: 1024px) 40vw, 100vw"
+            />
           </div>
         </div>
-      </section>
-
-      <section className="border-t border-slate-200 px-6 py-20 md:py-24">
-        <div className="mx-auto max-w-6xl">
-          <div className="section-heading">
-            <span className="kicker">Representative programs</span>
-            <h2 className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-              Popular schemes you can explore
-            </h2>
-            <p className="max-w-2xl text-base leading-8 text-slate-600">
-              Here are a few well-known programs. Ask SAHAY about any of them — or describe your situation to find more.
-            </p>
-          </div>
-
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
-            {schemes.map((scheme) => (
-              <Link href="/schemes" key={scheme.name} className="glass-card-accent p-7">
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-emerald-700/80">
-                  {scheme.category}
+        <div className="flex flex-col justify-center gap-8">
+          <h2 className="max-w-xl text-3xl font-semibold tracking-tight md:text-4xl">
+            Three short steps. Then the official portal.
+          </h2>
+          <ol className="space-y-6">
+            <li className="flex gap-4">
+              <MagnifyingGlass size={22} className="mt-1 shrink-0" />
+              <div>
+                <p className="font-semibold">Describe work, place, or a scheme name</p>
+                <p className="mt-1 text-[var(--muted)]">
+                  Farmer, student, street vendor, or PM-KISAN. Type or speak.
                 </p>
-                <h3 className="mt-4 text-2xl font-semibold tracking-tight text-slate-950">{scheme.name}</h3>
-                <p className="mt-3 text-sm leading-7 text-slate-600">{scheme.description}</p>
-                <p className="mt-6 text-sm font-medium text-emerald-700">View scheme details</p>
-              </Link>
-            ))}
-          </div>
+              </div>
+            </li>
+            <li className="flex gap-4">
+              <IdentificationCard size={22} className="mt-1 shrink-0" />
+              <div>
+                <p className="font-semibold">See likely matches with documents</p>
+                <p className="mt-1 text-[var(--muted)]">
+                  Benefits, who it is for, and what to carry. No invented amounts.
+                </p>
+              </div>
+            </li>
+            <li className="flex gap-4">
+              <ChatText size={22} className="mt-1 shrink-0" />
+              <div>
+                <p className="font-semibold">Open the ministry apply page</p>
+                <p className="mt-1 text-[var(--muted)]">
+                  Sahay links out. Applications stay on government sites.
+                </p>
+              </div>
+            </li>
+          </ol>
         </div>
       </section>
 
-      <section className="px-6 py-20 md:py-24">
-        <div className="mx-auto max-w-6xl">
-          <div className="surface-panel mx-auto max-w-4xl p-8 text-center md:p-12">
-            <span className="kicker justify-center">Ready to explore benefits</span>
-            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-              Start with a short conversation and narrow the search quickly.
+      <section className="shell pb-24">
+        <h2 className="max-w-2xl text-3xl font-semibold tracking-tight md:text-4xl">
+          A catalog of flagship central schemes, kept as structured records.
+        </h2>
+        <div className="mt-10 grid gap-4 md:grid-cols-2">
+          {mosaic.map((item, index) => (
+            <Link
+              key={item.title}
+              href={item.href}
+              className={`group bezel ${index === 0 ? "md:col-span-2" : ""}`}
+            >
+              <div className={`bezel-inner relative ${index === 0 ? "min-h-[280px]" : "min-h-[240px]"}`}>
+                <Image
+                  src={item.image}
+                  alt=""
+                  fill
+                  className="photo transition-transform duration-700 group-hover:scale-[1.03]"
+                  sizes="(min-width: 768px) 50vw, 100vw"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[rgba(17,22,19,0.72)] to-transparent" />
+                <div className="absolute bottom-0 p-6 text-[#f6f3ea]">
+                  <p className="scheme-chip bg-white/15 text-[#f6f3ea]">{item.label}</p>
+                  <h3 className="mt-3 text-2xl font-semibold">{item.title}</h3>
+                  <p className="mt-2 max-w-md text-sm leading-6 text-white/85">{item.detail}</p>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section className="shell pb-24">
+        <p className="text-sm text-[var(--muted)]">Ask in any of these languages</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {languages.map((language) => (
+            <span
+              key={language}
+              className="rounded-full border border-[var(--line)] px-4 py-2 text-sm"
+            >
+              {language}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      <section className="shell pb-28">
+        <div className="bezel">
+          <div className="bezel-inner px-8 py-12 md:px-14 md:py-16">
+            <h2 className="max-w-2xl text-3xl font-semibold tracking-tight md:text-4xl">
+              Start with one sentence about your family or work.
             </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base leading-8 text-slate-600">
-              Describe your family, work, and location — SAHAY will recommend matching schemes and guide you through next steps.
+            <p className="lede mt-4">
+              Sahay retrieves from official scheme records, then answers. Confirm the last mile on the ministry site.
             </p>
-            <div className="mt-8 flex justify-center">
-              <Link href="/chat" className="btn-primary">
-                Launch chat
-              </Link>
-            </div>
+            <Link href="/chat" className="btn btn-primary mt-8">
+              Open chat
+              <span className="btn-icon">
+                <ArrowUpRight size={16} />
+              </span>
+            </Link>
           </div>
         </div>
       </section>

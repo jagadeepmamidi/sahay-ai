@@ -1,107 +1,81 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { ArrowUpRight, List, X } from "@phosphor-icons/react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
+import { ThemeToggle } from "./ThemeToggle";
 
 const navLinks = [
-  { href: '/', label: 'Home' },
-  { href: '/schemes', label: 'Schemes' },
-  { href: '/eligibility', label: 'Eligibility' },
-  { href: '/about', label: 'About' },
+  { href: "/", label: "Home" },
+  { href: "/schemes", label: "Schemes" },
+  { href: "/eligibility", label: "Eligibility" },
+  { href: "/about", label: "About" },
 ];
 
 export function Navbar() {
   const pathname = usePathname();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [open, setOpen] = useState(false);
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
-      <div className="mx-auto max-w-6xl px-6">
-        <div className="flex h-[4.5rem] items-center justify-between gap-4">
-          <Link href="/" className="flex shrink-0 items-center gap-2">
-            <span className="text-xl font-semibold tracking-tight text-slate-950">
-              <span className="text-accent-glow">SAHAY</span>
-              <span className="text-slate-400">.AI</span>
+    <>
+      <header className="island-nav">
+        <Link href="/" className="wordmark">
+          Sahay<span>.in</span>
+        </Link>
+        <nav className="nav-links" aria-label="Primary">
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              aria-current={pathname === link.href ? "page" : undefined}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <Link href="/chat" className="btn btn-primary hidden sm:inline-flex">
+            Ask Sahay
+            <span className="btn-icon">
+              <ArrowUpRight size={16} />
             </span>
           </Link>
-
-          <div className="hidden flex-1 items-center justify-center lg:flex">
-            <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 p-1">
-              {navLinks.map((link) => {
-                const isActive = pathname === link.href;
-
-                return (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    aria-current={isActive ? 'page' : undefined}
-                    className={`rounded-full px-4 py-2 text-sm font-medium ${
-                      isActive
-                        ? 'bg-emerald-50 text-emerald-700'
-                        : 'text-slate-600 hover:bg-white hover:text-slate-950'
-                    }`}
-                  >
-                    {link.label}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="hidden shrink-0 items-center gap-3 lg:flex">
-            <Link href="/chat" className="btn-primary">
-              Start chat
-            </Link>
-          </div>
-
           <button
             type="button"
-            onClick={() => setMobileMenuOpen((open) => !open)}
-            className="inline-flex rounded-full border border-slate-200 bg-white p-2 text-slate-700 lg:hidden"
-            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
-            aria-expanded={mobileMenuOpen}
-            aria-controls="mobile-navigation"
+            className="icon-btn lg:hidden"
+            onClick={() => setOpen((value) => !value)}
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
           >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              {mobileMenuOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6 6 18 18M18 6 6 18" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 7h16M4 12h16M4 17h16" />
-              )}
-            </svg>
+            {open ? <X size={18} /> : <List size={18} />}
           </button>
         </div>
-      </div>
-
-      {mobileMenuOpen && (
-        <div id="mobile-navigation" className="border-t border-slate-200 bg-white lg:hidden">
-          <div className="mx-auto flex max-w-6xl flex-col gap-2 px-6 py-4">
-            {navLinks.map((link) => {
-              const isActive = pathname === link.href;
-
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={`rounded-2xl px-4 py-3 text-sm font-medium ${
-                    isActive
-                      ? 'bg-emerald-50 text-emerald-700'
-                      : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950'
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-            <Link href="/chat" onClick={() => setMobileMenuOpen(false)} className="btn-primary mt-2">
-              Start chat
+      </header>
+      {open && (
+        <div className="shell mt-3 rounded-[1.5rem] border border-[var(--line)] bg-[var(--surface)] p-4 lg:hidden">
+          <div className="flex flex-col gap-1">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setOpen(false)}
+                className="rounded-2xl px-4 py-3 text-[var(--ink)]"
+                aria-current={pathname === link.href ? "page" : undefined}
+              >
+                {link.label}
+              </Link>
+            ))}
+            <Link href="/chat" onClick={() => setOpen(false)} className="btn btn-primary mt-2">
+              Ask Sahay
+              <span className="btn-icon">
+                <ArrowUpRight size={16} />
+              </span>
             </Link>
           </div>
         </div>
       )}
-    </nav>
+    </>
   );
 }

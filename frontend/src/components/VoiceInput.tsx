@@ -176,11 +176,11 @@ export function VoiceInputButton({
       onClick={toggleRecording}
       disabled={isProcessing}
       className={`
-                ${sizeClasses[size]} rounded-xl transition-all duration-200
+                ${sizeClasses[size]} rounded-full transition-all duration-200
                 ${
                   isRecording
-                    ? "bg-red-50 text-red-500 border border-red-200 animate-pulse"
-                    : "bg-white border border-slate-200 text-slate-500 hover:text-slate-700 hover:border-slate-300"
+                    ? "bg-red-50 text-red-600 border border-red-200 animate-pulse"
+                    : "icon-btn"
                 }
                 ${isProcessing ? "opacity-50 cursor-not-allowed" : ""}
             `}
