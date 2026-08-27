@@ -64,5 +64,5 @@ nul
 Sahay_AI_Project_Proposal.md
 DATA_INGESTION.md
 
-# Playwright MCP
-.playwright-mcp/
+.agents/
+.cursor/skills-*/

@@ -36,7 +36,7 @@ class Settings(BaseSettings):
 
     # Groq API (primary LLM - free tier)
     groq_api_key: str = ""
-    groq_chat_model: str = "llama-3.3-70b-versatile"
+    groq_chat_model: str = "openai/gpt-oss-120b"
     groq_whisper_model: str = "whisper-large-v3"
 
     # Sarvam AI (Indian languages STT/TTS/Translation)
@@ -69,10 +69,10 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("CHROMA_PERSIST_DIR", "CHROMA_PERSIST_DIRECTORY"),
     )
     embedding_model: str = Field(
-        default="intfloat/multilingual-e5-large",
+        default="intfloat/multilingual-e5-small",
         validation_alias=AliasChoices("EMBEDDING_MODEL"),
     )
-    embedding_dimension: int = 1024
+    embedding_dimension: int = 384
 
     # Multilingual
     default_language: str = "en"
@@ -141,6 +141,7 @@ SCHEME_CATEGORIES = [
     "Rural Development",
     "Urban Development",
     "Skills & Training",
+    "Energy",
 ]
 
 # Indian States and UTs

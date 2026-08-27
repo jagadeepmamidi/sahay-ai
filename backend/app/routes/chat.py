@@ -140,9 +140,9 @@ async def send_message(request: ChatRequest):
 
         detected_lang = request.language
         if request.language == "auto":
-            from app.agents.language_agent import LanguageAgent
+            from app.agents.language_agent import get_language_agent
 
-            lang_agent = LanguageAgent()
+            lang_agent = get_language_agent()
             detected_lang = lang_agent.detect_language(request.message)
 
         if detected_lang not in SUPPORTED_LANGUAGES:
@@ -155,27 +155,15 @@ async def send_message(request: ChatRequest):
             user_profile=request.user_profile,
         )
 
-        lang_agent = None
-        if detected_lang != "en":
-            from app.agents.language_agent import LanguageAgent
-
-            lang_agent = LanguageAgent()
-
         scheme_cards = None
         if result.get("schemes"):
             scheme_cards = [
                 SchemeCard(
                     id=s.get("id", ""),
-                    name=_translate_text(lang_agent, s.get("name", ""), detected_lang),
-                    category=_translate_text(
-                        lang_agent, s.get("category", ""), detected_lang
-                    ),
-                    benefit_summary=_translate_text(
-                        lang_agent, s.get("benefit_summary", ""), detected_lang
-                    ),
-                    eligibility_summary=_translate_text(
-                        lang_agent, s.get("eligibility_summary", ""), detected_lang
-                    ),
+                    name=s.get("name", ""),
+                    category=s.get("category", ""),
+                    benefit_summary=s.get("benefit_summary", ""),
+                    eligibility_summary=s.get("eligibility_summary", ""),
                     apply_url=s.get("apply_url"),
                 )
                 for s in result["schemes"][:5]
@@ -189,11 +177,6 @@ async def send_message(request: ChatRequest):
                 "What is the benefit amount?",
             ],
         )
-        if detected_lang != "en":
-            suggested_questions = [
-                _translate_text(lang_agent, question, detected_lang)
-                for question in suggested_questions
-            ]
 
         return ChatResponse(
             success=True,

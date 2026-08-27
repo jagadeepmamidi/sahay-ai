@@ -65,54 +65,48 @@ docker-compose up
 
 ---
 
-## 🏗️ Architecture
+## Architecture
+
+Chat does not load a large embedding model on every question. The primary
+knowledge source is a curated scheme catalog. Retrieval is BM25 plus alias and
+eligibility signals. Groq writes the answer from those records only.
 
 ```
 sahay-ai/
-├── backend/                # FastAPI Python backend
-│   ├── app/
-│   │   ├── agents/         # AI orchestrator, language agent
-│   │   ├── rag/            # Hybrid retriever (BM25 + ChromaDB)
-│   │   ├── routes/         # API: chat, schemes, voice, whatsapp
-│   │   ├── services/       # LLM, embedder, voice (Sarvam/Groq)
-│   │   ├── pipeline/       # Document ingestion & chunking
-│   │   └── core/           # Settings, config
-│   ├── scripts/            # Data ingestion scripts
-│   └── requirements.txt
-├── frontend/               # Next.js 16 React frontend
-│   └── src/
-│       ├── app/            # Pages: /, /chat, /schemes, /about
-│       ├── components/     # ChatInterface, VoiceInput, LanguageSelector
-│       └── lib/            # API client
-├── data/                   # ChromaDB vector store, uploaded PDFs
+├── backend/
+│   ├── app/knowledge/      # Curated scheme catalog (source of truth)
+│   ├── app/rag/            # BM25 + alias retriever
+│   ├── app/agents/         # Orchestrator (single LLM pass)
+│   ├── app/routes/         # chat, schemes, voice, whatsapp
+│   └── tests/
+├── frontend/src/app/       # Home, chat, schemes, eligibility, about
 └── docker-compose.yml
 ```
 
-### Request Flow
+### Request flow
 
 ```
-User query (any language)
+User question
   → POST /api/v1/chat
-  → LanguageAgent.detect_language()
-  → AgentOrchestrator.process()
-      ├── classify_intent()              # Groq LLM → JSON intent
-      ├── HybridRetriever.search()       # BM25 + ChromaDB vector search
-      └── generate_response()            # Groq LLM with RAG context
-  → ChatResponse (scheme cards + suggested questions)
+  → language detect (optional English pivot)
+  → heuristic query parse (no extra LLM call)
+  → catalog BM25 + alias rank
+  → one Groq completion grounded in scheme records
+  → scheme cards with official URLs
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| **LLM** | Groq (Llama 3.3 70B) |
-| **Embeddings** | intfloat/multilingual-e5-large (1024d) |
+| **LLM** | Groq (`openai/gpt-oss-120b`, with fallbacks) |
+| **Retrieval** | Curated catalog + BM25 + alias matching |
 | **STT/TTS** | Sarvam AI (Indian languages) + Groq Whisper (English) |
 | **Backend** | FastAPI, Python 3.11 |
 | **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS v4 |
-| **Vector DB** | ChromaDB (persistent, local) |
+| **Optional extras** | ChromaDB for uploaded PDFs only |
 | **Database** | Supabase PostgreSQL (optional — scheme catalog & analytics) |
 | **Translation** | deep-translator (Google Translate) |
 | **Rate Limiting** | slowapi (30 req/min) |

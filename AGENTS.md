@@ -55,7 +55,7 @@ Copy `backend/.env.template` to `backend/.env`. The required keys are:
 
 | Variable | Purpose |
 |---|---|
-| `GROQ_API_KEY` | Primary LLM (Llama 3.3 70B) + Whisper STT for English |
+| `GROQ_API_KEY` | Primary LLM (`openai/gpt-oss-120b`) + Whisper STT for English |
 | `SARVAM_API_KEY` | STT/TTS/Translation for Indian languages |
 | `SUPABASE_URL` + `SUPABASE_ANON_KEY` | **Optional** — scheme catalog & analytics only |
 | `JWT_SECRET_KEY` | Auth token signing |
@@ -83,11 +83,12 @@ User query (any language)
 
 ### Backend Modules (`backend/app/`)
 
-- **`agents/orchestrator.py`** — Central brain. `AgentOrchestrator` handles intent classification (11 intent types), conversation memory (per session_id, last 10 turns), RAG retrieval, and response generation. Singleton via `get_orchestrator()`.
-- **`agents/language_agent.py`** — Language detection (`langdetect`) and translation (Google Translate via `deep-translator`). Non-English → English pivot routing. Singleton via `get_language_agent()`.
-- **`rag/hybrid_retriever.py`** — Merges BM25 (`rank-bm25`) and ChromaDB vector search. Default `alpha=0.5` (balanced). Falls back to sample documents (PM-KISAN, PM-JAY, PMAY-G) when ChromaDB is empty. Singleton via `get_retriever()`.
-- **`services/embedder.py`** — `intfloat/multilingual-e5-large` (1024d). **Critical**: must prefix documents with `"passage: "` and queries with `"query: "` — the `embed_documents()` and `embed_query()` methods handle this automatically; do not use `embed_batch()` for RAG.
-- **`services/llm.py`** — Groq API wrapper with `tenacity` retry (3 attempts, exponential backoff). Singleton via `get_llm_service()`.
+- **`knowledge/catalog.py`** — Curated scheme records (benefits, eligibility rules, official URLs). This is the primary RAG source.
+- **`agents/orchestrator.py`** — Single LLM pass. Intent is heuristic, not an extra Groq call.
+- **`rag/hybrid_retriever.py`** — BM25 + alias matching over the catalog. No neural embedding on the chat path.
+- **`agents/language_agent.py`** — Language detection (`langdetect`) and translation (Google Translate via `deep-translator`). Non-English → English pivot for retrieval.
+- **`services/embedder.py`** — Optional, lazy-loaded, used only for admin PDF ingest.
+- **`services/llm.py`** — Groq wrapper with current model fallbacks (`openai/gpt-oss-120b`).
 - **`services/voice.py`** — Routes STT to Sarvam AI for Indian languages (`te`, `hi`, `ta`, `kn`, `ml`, `or`, `bn`, `mr`, `gu`, `pa`) and Groq Whisper for English. TTS is Sarvam-only.
 - **`db/chroma.py`** — ChromaDB persistent client. Collection name: `sahay_schemes`, cosine similarity space. If you get a `sqlite3.OperationalError` on startup, the schema is incompatible — delete `data/chromadb/` and re-run ingestion.
 - **`db/supabase_client.py`** — Optional; all callers wrap `get_supabase()` in try/except so the app degrades gracefully when unconfigured.

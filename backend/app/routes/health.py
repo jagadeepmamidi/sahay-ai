@@ -55,7 +55,8 @@ async def readiness_check():
 
         retriever = get_retriever()
         stats = retriever.get_stats()
-        services["vector_store"] = "ok" if stats["has_vector_search"] else "degraded"
+        services["catalog"] = "ok" if stats.get("catalog_schemes", 0) > 0 else "empty"
+        services["retriever"] = "ok" if stats.get("catalog_schemes", 0) > 0 else "empty"
     except Exception as e:
         services["vector_store"] = f"error: {str(e)}"
 

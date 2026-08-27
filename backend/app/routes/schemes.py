@@ -14,6 +14,9 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.config import INDIAN_STATES, SCHEME_CATEGORIES, get_settings
+from app.knowledge.catalog import get_scheme as get_catalog_scheme
+from app.knowledge.catalog import list_schemes as list_catalog_schemes
+from app.knowledge.catalog import load_catalog, match_eligibility
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -31,6 +34,7 @@ CATEGORY_ORDER = [
     "Financial Inclusion",
     "Rural Development",
     "Urban Development",
+    "Skills & Training",
     "General",
 ]
 
@@ -396,104 +400,50 @@ class EligibilityCheckResponse(BaseModel):
     schemes: List[EligibleScheme]
 
 
-# ==================== Sample Data (Replace with DB) ====================
+def _scheme_from_catalog(record: dict) -> SchemeDetail:
+    """Map a catalog record onto the public SchemeDetail contract."""
+    rules = record.get("eligibility") or {}
+    return SchemeDetail(
+        id=record["id"],
+        name=record.get("full_name") or record["name"],
+        name_hindi=record.get("name_hindi"),
+        category=record.get("category") or "General",
+        scheme_type=SchemeType.CENTRAL
+        if record.get("scheme_type") != "state"
+        else SchemeType.STATE,
+        ministry=record.get("ministry") or "",
+        description=record.get("description") or "",
+        benefits=record.get("benefits") or "",
+        benefit_amount=record.get("benefit_amount"),
+        eligibility=EligibilityCriteria(
+            age_min=rules.get("age_min"),
+            age_max=rules.get("age_max"),
+            income_max=rules.get("income_max"),
+            gender=rules.get("gender"),
+            occupation=rules.get("occupations"),
+            states=rules.get("states"),
+            other_criteria=[record.get("eligibility_summary")]
+            if record.get("eligibility_summary")
+            else None,
+        ),
+        eligibility_summary=record.get("eligibility_summary") or "",
+        documents_required=[
+            SchemeDocument(
+                name=item.get("name", ""),
+                description=item.get("description", ""),
+                is_mandatory=bool(item.get("is_mandatory", True)),
+            )
+            for item in record.get("documents_required") or []
+            if item.get("name")
+        ],
+        application_process=record.get("application_process") or "",
+        apply_url=record.get("apply_url"),
+        helpline=record.get("helpline"),
+        last_updated=record.get("last_updated") or "",
+    )
 
-SAMPLE_SCHEMES = [
-    SchemeDetail(
-        id="pm-kisan",
-        name="PM-KISAN (Pradhan Mantri Kisan Samman Nidhi)",
-        name_hindi="प्रधानमंत्री किसान सम्मान निधि",
-        category="Agriculture",
-        scheme_type=SchemeType.CENTRAL,
-        ministry="Ministry of Agriculture & Farmers Welfare",
-        description="PM-KISAN is a Central Sector scheme with 100% funding from Government of India. It provides income support to all landholding farmers' families to supplement their financial needs.",
-        benefits="Direct income support of ₹6,000 per year to farmer families",
-        benefit_amount="₹6,000 per year (₹2,000 every 4 months)",
-        eligibility=EligibilityCriteria(
-            occupation=["farmer"],
-            other_criteria=[
-                "Must own cultivable land",
-                "Not a government employee",
-                "Not an income tax payer",
-            ],
-        ),
-        eligibility_summary="All landholding farmer families with cultivable land are eligible",
-        documents_required=[
-            SchemeDocument(
-                name="Aadhaar Card", description="For identity verification"
-            ),
-            SchemeDocument(name="Land Records", description="Proof of land ownership"),
-            SchemeDocument(
-                name="Bank Account Details", description="For direct benefit transfer"
-            ),
-        ],
-        application_process="1. Visit pmkisan.gov.in\n2. Click on 'New Farmer Registration'\n3. Enter Aadhaar number and CAPTCHA\n4. Fill the registration form with land details\n5. Submit and note the registration number",
-        apply_url="https://pmkisan.gov.in/",
-        helpline="155261 / 011-23381092",
-        last_updated="2024-01-15",
-    ),
-    SchemeDetail(
-        id="pm-ayushman",
-        name="Ayushman Bharat PM-JAY (Pradhan Mantri Jan Arogya Yojana)",
-        name_hindi="प्रधानमंत्री जन आरोग्य योजना",
-        category="Health",
-        scheme_type=SchemeType.CENTRAL,
-        ministry="Ministry of Health and Family Welfare",
-        description="World's largest health insurance scheme providing free health coverage up to ₹5 lakh per family per year for secondary and tertiary care hospitalization.",
-        benefits="Free health coverage up to ₹5 lakh per family per year",
-        benefit_amount="Up to ₹5,00,000 per year",
-        eligibility=EligibilityCriteria(
-            income_max=200000,
-            other_criteria=["Must be listed in SECC 2011 database", "BPL families"],
-        ),
-        eligibility_summary="BPL families as per SECC 2011 database",
-        documents_required=[
-            SchemeDocument(name="Aadhaar Card", description="Identity proof"),
-            SchemeDocument(
-                name="SECC Database Entry", description="Automatic verification"
-            ),
-            SchemeDocument(
-                name="Ration Card",
-                description="For family verification",
-                is_mandatory=False,
-            ),
-        ],
-        application_process="1. Check eligibility on mera.pmjay.gov.in\n2. Visit nearest CSC or empaneled hospital\n3. Get Ayushman Card created\n4. Use at any empaneled hospital for cashless treatment",
-        apply_url="https://pmjay.gov.in/",
-        helpline="14555 / 1800-111-565",
-        last_updated="2024-01-10",
-    ),
-    SchemeDetail(
-        id="pm-awas-gramin",
-        name="Pradhan Mantri Awaas Yojana - Gramin (PMAY-G)",
-        name_hindi="प्रधानमंत्री आवास योजना - ग्रामीण",
-        category="Housing",
-        scheme_type=SchemeType.CENTRAL,
-        ministry="Ministry of Rural Development",
-        description="Provides financial assistance to houseless and those living in kutcha/dilapidated houses for construction of pucca house with basic amenities.",
-        benefits="Financial assistance for house construction in rural areas",
-        benefit_amount="₹1.20 lakh (plains) / ₹1.30 lakh (hilly areas)",
-        eligibility=EligibilityCriteria(
-            other_criteria=[
-                "Houseless or living in kutcha house",
-                "Rural resident",
-                "Name in PMAY-G Awaas+ list",
-            ]
-        ),
-        eligibility_summary="Houseless rural families without pucca house",
-        documents_required=[
-            SchemeDocument(name="Aadhaar Card", description="Identity proof"),
-            SchemeDocument(
-                name="Job Card (MGNREGA)", description="For rural resident verification"
-            ),
-            SchemeDocument(name="Bank Account", description="For fund transfer"),
-        ],
-        application_process="1. Check eligibility on pmayg.nic.in\n2. Apply through Gram Panchayat\n3. Verification by Block/District officials\n4. Sanction letter issued\n5. Receive funds in installments",
-        apply_url="https://pmayg.nic.in/",
-        helpline="1800-11-6446",
-        last_updated="2024-01-20",
-    ),
-]
+
+SAMPLE_SCHEMES = [_scheme_from_catalog(record) for record in load_catalog()]
 
 
 # ==================== Endpoints ====================
@@ -515,6 +465,42 @@ async def list_schemes(
     Get paginated list of government schemes with optional filters.
     """
     try:
+        catalog_records = list_catalog_schemes(category=category, search=search)
+        if catalog_records:
+            filtered = list(catalog_records)
+            if scheme_type and scheme_type != SchemeType.BOTH:
+                filtered = [
+                    record
+                    for record in filtered
+                    if record.get("scheme_type", "central") == scheme_type.value
+                ]
+            filtered = sorted(filtered, key=lambda item: item.get("name", "").lower())
+            total = len(filtered)
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            start = (page - 1) * page_size
+            paginated = filtered[start : start + page_size]
+            return SchemeListResponse(
+                total=total,
+                page=page,
+                page_size=page_size,
+                total_pages=total_pages,
+                schemes=[
+                    SchemeListItem(
+                        id=record["id"],
+                        name=record.get("full_name") or record["name"],
+                        name_hindi=record.get("name_hindi"),
+                        category=record.get("category", "General"),
+                        scheme_type=SchemeType.CENTRAL
+                        if record.get("scheme_type") != "state"
+                        else SchemeType.STATE,
+                        benefit_summary=record.get("benefit_amount")
+                        or (record.get("benefits") or "")[:120],
+                        eligibility_summary=record.get("eligibility_summary") or "",
+                    )
+                    for record in paginated
+                ],
+            )
+
         # Try Supabase first
         try:
             from app.db.supabase_client import get_supabase
@@ -680,17 +666,12 @@ async def list_schemes(
 
 @router.get("/categories")
 async def get_categories():
-    """Get categories, preferring live values from ChromaDB."""
+    """Get categories from the curated catalog."""
     try:
         merged_categories = {
-            _normalize_category(
-                (s.get("category") or "").strip(), s.get("name", ""), ""
-            )
-            for s in {
-                **_load_sample_schemes_as_dict(),
-                **_load_chroma_schemes(),
-            }.values()
-            if (s.get("category") or "").strip()
+            record.get("category")
+            for record in load_catalog()
+            if record.get("category")
         }
         ordered = [
             category for category in CATEGORY_ORDER if category in merged_categories
@@ -718,7 +699,11 @@ async def get_scheme_details(scheme_id: str):
     Get detailed information about a specific scheme.
     """
     try:
-        # Try Supabase first
+        catalog_record = get_catalog_scheme(scheme_id)
+        if catalog_record:
+            return _scheme_from_catalog(catalog_record)
+
+        # Try Supabase next
         try:
             from app.db.supabase_client import get_supabase
 
@@ -811,64 +796,27 @@ async def check_eligibility(request: EligibilityCheckRequest):
     """
     try:
         eligible_schemes = []
+        profile = request.model_dump(exclude_none=True)
 
-        for scheme in SAMPLE_SCHEMES:
-            matched = []
-            missing = []
-
-            # Check occupation
-            if scheme.eligibility.occupation:
-                if request.occupation and request.occupation.lower() in [
-                    o.lower() for o in scheme.eligibility.occupation
-                ]:
-                    matched.append("Occupation matches")
-                else:
-                    missing.append(
-                        f"Requires occupation: {', '.join(scheme.eligibility.occupation)}"
-                    )
-
-            # Check income
-            if scheme.eligibility.income_max:
-                if request.income and request.income <= scheme.eligibility.income_max:
-                    matched.append("Income within limit")
-                else:
-                    missing.append(
-                        f"Income should be below ₹{scheme.eligibility.income_max:,.0f}"
-                    )
-
-            # Check state
-            if scheme.eligibility.states:
-                if request.state and request.state in scheme.eligibility.states:
-                    matched.append("State eligible")
-                elif request.state:
-                    missing.append(f"Not available in {request.state}")
-
-            # Calculate match score
-            total_criteria = len(matched) + len(missing)
-            if total_criteria > 0:
-                match_score = len(matched) / total_criteria
-            else:
-                match_score = 0.5  # Neutral if no specific criteria
-
-            # Include if any match or no strict criteria
-            if match_score > 0 or len(missing) == 0:
-                eligible_schemes.append(
-                    EligibleScheme(
-                        scheme=SchemeListItem(
-                            id=scheme.id,
-                            name=scheme.name,
-                            name_hindi=scheme.name_hindi,
-                            category=scheme.category,
-                            scheme_type=scheme.scheme_type,
-                            benefit_summary=scheme.benefit_amount
-                            or scheme.benefits[:100],
-                            eligibility_summary=scheme.eligibility_summary,
-                        ),
-                        match_score=match_score,
-                        matched_criteria=matched,
-                        missing_criteria=missing,
-                    )
+        for record in load_catalog():
+            scored = match_eligibility(record, profile)
+            scheme = _scheme_from_catalog(record)
+            eligible_schemes.append(
+                EligibleScheme(
+                    scheme=SchemeListItem(
+                        id=scheme.id,
+                        name=scheme.name,
+                        name_hindi=scheme.name_hindi,
+                        category=scheme.category,
+                        scheme_type=scheme.scheme_type,
+                        benefit_summary=scheme.benefit_amount or scheme.benefits[:100],
+                        eligibility_summary=scheme.eligibility_summary,
+                    ),
+                    match_score=scored["match_score"],
+                    matched_criteria=scored["matched_criteria"],
+                    missing_criteria=scored["missing_criteria"],
                 )
+            )
 
         # Sort by match score descending
         eligible_schemes.sort(key=lambda x: x.match_score, reverse=True)
@@ -891,22 +839,17 @@ async def quick_search(q: str = Query(..., min_length=2, description="Search que
     Returns top 5 matching schemes.
     """
     try:
-        search_lower = q.lower()
-        matches = []
+        from app.rag.hybrid_retriever import get_retriever
 
-        for scheme in SAMPLE_SCHEMES:
-            score = 0
-            if search_lower in scheme.name.lower():
-                score += 10
-            if scheme.name_hindi and search_lower in scheme.name_hindi:
-                score += 8
-            if search_lower in scheme.description.lower():
-                score += 5
-            if search_lower in scheme.category.lower():
-                score += 3
-
-            if score > 0:
-                matches.append({"scheme": scheme.name, "id": scheme.id, "score": score})
+        hits = get_retriever().search(q, top_k=5)
+        matches = [
+            {
+                "scheme": (hit.get("metadata") or {}).get("scheme_name"),
+                "id": (hit.get("metadata") or {}).get("scheme_id") or hit.get("id"),
+                "score": hit.get("score", 0),
+            }
+            for hit in hits
+        ]
 
         matches.sort(key=lambda x: x["score"], reverse=True)
 

@@ -24,6 +24,12 @@ sentence-transformers>=3.0.0
 rank-bm25>=0.2.2
 numpy>=1.24.0
 
+# Optional embeddings for admin PDF ingest only (not used on the chat path)
+sentence-transformers>=3.0.0
+
+# Tests
+pytest>=8.0.0
+
 # Language detection
 langdetect==1.0.9
 

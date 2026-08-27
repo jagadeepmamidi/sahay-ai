@@ -1,553 +1,337 @@
 """
-Hybrid Retriever (BM25 + ChromaDB Vector Search)
-=================================================
+Scheme-level hybrid retriever
+=============================
 
-True hybrid retrieval combining BM25 keyword search with ChromaDB
-semantic vector search using multilingual-e5-large embeddings (1024d).
+Query path is lexical only: BM25 + alias/field matching + eligibility boost.
+No neural embedding model is loaded at request time.
 
-Author: Jagadeep Mamidi
+ChromaDB remains an optional supplement for uploaded PDFs. Those documents
+are pulled as text and merged into the same BM25 index.
 """
+
+from __future__ import annotations
 
 import logging
 import re
 from typing import Any, Dict, List, Optional
 
-import numpy as np
 from rank_bm25 import BM25Okapi
 
-from app.core.config import get_settings
-from app.db.chroma import get_chroma_client
+from app.knowledge.catalog import load_catalog
+from app.rag.query_parser import parse_query
 
 logger = logging.getLogger(__name__)
 
-settings = get_settings()
+
+def _normalize(text: str) -> str:
+    cleaned = (text or "").lower()
+    cleaned = re.sub(r"[-_/]", " ", cleaned)
+    cleaned = re.sub(r"[^a-z0-9\u0900-\u097f\s]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
+def _tokenize(text: str) -> List[str]:
+    return [token for token in _normalize(text).split() if token]
 
 
 class HybridRetriever:
-    """
-    Hybrid retriever that combines:
-    - BM25 keyword matching (good for exact scheme names, terms)
-    - ChromaDB vector similarity (good for semantic/conceptual matches)
-
-    Results are merged and re-ranked using weighted combination.
-    """
+    """Scheme-first retriever with optional Chroma text supplements."""
 
     def __init__(self):
-        self.bm25 = None
-        self.documents: List[Dict] = []
+        self.documents: List[Dict[str, Any]] = []
         self.tokenized_corpus: List[List[str]] = []
+        self.bm25: Optional[BM25Okapi] = None
         self.chroma_collection = None
         self._chroma_client = None
+        self._load_catalog_documents()
+        self._load_chroma_supplements()
+        self._build_bm25_index()
 
-        # Initialize ChromaDB
-        self._init_chromadb()
+    def _load_catalog_documents(self) -> None:
+        for scheme in load_catalog():
+            self.documents.append(self._scheme_to_document(scheme))
 
-        # Load documents from ChromaDB if available
-        self._load_from_chromadb()
+    def _scheme_to_document(self, scheme: Dict[str, Any]) -> Dict[str, Any]:
+        content = (
+            f"{scheme.get('full_name') or scheme['name']}. "
+            f"{scheme.get('description', '')} "
+            f"Benefits: {scheme.get('benefits', '')} "
+            f"Eligibility: {scheme.get('eligibility_summary', '')} "
+            f"How to apply: {scheme.get('application_process', '')}"
+        )
+        return {
+            "id": scheme["id"],
+            "content": content,
+            "source": "catalog",
+            "scheme": scheme,
+            "metadata": {
+                "scheme_id": scheme["id"],
+                "scheme_name": scheme["name"],
+                "full_name": scheme.get("full_name", scheme["name"]),
+                "category": scheme.get("category", ""),
+                "benefit_summary": scheme.get("benefit_amount") or scheme.get("benefits", ""),
+                "eligibility_summary": scheme.get("eligibility_summary", ""),
+                "apply_url": scheme.get("apply_url"),
+                "ministry": scheme.get("ministry", ""),
+            },
+        }
 
-    def _init_chromadb(self):
-        """Initialize ChromaDB with persistent storage."""
+    def _load_chroma_supplements(self) -> None:
+        """Load extra PDF chunks as text only. Never embed at query time."""
         try:
+            from app.db.chroma import get_chroma_client
+
             chroma = get_chroma_client()
             self._chroma_client = chroma.client
             self.chroma_collection = chroma.collection
-
-            count = self.chroma_collection.count()
-            logger.info(
-                f"ChromaDB initialized at {chroma.persist_dir} with {count} documents"
-            )
-        except Exception as e:
-            logger.error(
-                f"ChromaDB initialization failed: {e}. Running BM25-only mode."
-            )
-
-    def _sync_chroma_collection(self):
-        """Refresh the retriever's collection handle from the singleton client."""
-        try:
-            chroma = get_chroma_client()
-            self._chroma_client = chroma.client
-            self.chroma_collection = chroma.collection
-        except Exception as e:
-            logger.error(f"Failed to sync ChromaDB collection: {e}")
-            self.chroma_collection = None
-
-    def _load_from_chromadb(self):
-        """Load existing documents from ChromaDB to build BM25 index."""
-        self._sync_chroma_collection()
-        if not self.chroma_collection:
-            logger.info("No ChromaDB collection. Loading sample documents for BM25.")
-            self._load_sample_documents()
-            return
-
-        count = self.chroma_collection.count()
-        if count == 0:
-            logger.info("ChromaDB is empty. Loading sample documents for BM25.")
-            self._load_sample_documents()
-            return
-
-        # Load all documents from ChromaDB for BM25 index
-        try:
-            results = self.chroma_collection.get(include=["documents", "metadatas"])
-
-            for i, doc_id in enumerate(results["ids"]):
+            count = chroma.count()
+            if count == 0:
+                return
+            rows = chroma.get(limit=min(count, 2000))
+            ids = rows.get("ids") or []
+            docs = rows.get("documents") or []
+            metas = rows.get("metadatas") or []
+            existing = {doc["id"] for doc in self.documents}
+            added = 0
+            for idx, chunk_id in enumerate(ids):
+                metadata = metas[idx] or {}
+                scheme_id = str(metadata.get("scheme_id") or chunk_id)
+                if scheme_id in existing:
+                    continue
+                content = (docs[idx] or "").strip()
+                if not content:
+                    continue
                 self.documents.append(
                     {
-                        "id": doc_id,
-                        "content": results["documents"][i],
-                        "metadata": results["metadatas"][i] or {},
+                        "id": str(chunk_id),
+                        "content": content,
+                        "source": "chroma",
+                        "scheme": None,
+                        "metadata": {
+                            "scheme_id": scheme_id,
+                            "scheme_name": metadata.get("scheme_name")
+                            or metadata.get("name")
+                            or scheme_id,
+                            "category": metadata.get("category", "General"),
+                            "benefit_summary": metadata.get("benefit_summary", ""),
+                            "eligibility_summary": metadata.get("eligibility_summary", ""),
+                            "apply_url": metadata.get("apply_url")
+                            or metadata.get("source_url"),
+                        },
                     }
                 )
+                existing.add(scheme_id)
+                added += 1
+            if added:
+                logger.info("Loaded %s Chroma text supplements into BM25", added)
+        except Exception as exc:
+            logger.info("Chroma supplements skipped: %s", exc)
+            self.chroma_collection = None
 
-            self._append_sample_documents_if_missing()
-            self._build_bm25_index()
-            logger.info(
-                f"Loaded {len(self.documents)} documents from ChromaDB for BM25"
-            )
-
-        except Exception as e:
-            logger.error(f"Failed to load from ChromaDB: {e}")
-            self._load_sample_documents()
-
-    def _append_sample_documents_if_missing(self):
-        """
-        Ensure critical flagship schemes remain searchable in BM25 even when
-        Chroma contains a narrower domain dataset (e.g., scholarships only).
-        """
-        existing_ids = {doc["id"] for doc in self.documents}
-        for sample in self._get_sample_documents():
-            if sample["id"] not in existing_ids:
-                self.documents.append(sample)
-
-    def _load_sample_documents(self):
-        """Load sample scheme documents as fallback."""
-        self.documents = self._get_sample_documents()
-        self._build_bm25_index()
-        logger.info(f"Loaded {len(self.documents)} sample documents (fallback mode)")
-
-    def _get_sample_documents(self) -> List[Dict]:
-        """Return built-in sample scheme documents."""
-        return [
-            {
-                "id": "pm-kisan-1",
-                "content": """PM-KISAN (Pradhan Mantri Kisan Samman Nidhi) is a Central Sector scheme with 100%
-                funding from Government of India. Under the scheme, income support of Rs. 6000 per year
-                is provided to all farmer families across the country in three equal installments of
-                Rs. 2000 each every four months. The fund is directly transferred to the bank accounts
-                of the beneficiaries.""",
-                "metadata": {
-                    "scheme_id": "pm-kisan",
-                    "scheme_name": "PM-KISAN",
-                    "category": "Agriculture",
-                    "benefit_summary": "₹6,000 per year",
-                    "eligibility_summary": "All landholding farmer families",
-                },
-            },
-            {
-                "id": "pmjay-1",
-                "content": """Ayushman Bharat PM-JAY (Pradhan Mantri Jan Arogya Yojana) is the world's largest
-                health insurance scheme providing free health coverage of up to Rs. 5 lakh per family
-                per year for secondary and tertiary care hospitalization. Over 10.74 crore poor and
-                vulnerable families (approximately 50 crore beneficiaries) are entitled.""",
-                "metadata": {
-                    "scheme_id": "pm-ayushman",
-                    "scheme_name": "Ayushman Bharat PM-JAY",
-                    "category": "Health",
-                    "benefit_summary": "Up to ₹5 lakh health coverage",
-                    "eligibility_summary": "BPL families as per SECC 2011",
-                },
-            },
-            {
-                "id": "pmay-1",
-                "content": """Pradhan Mantri Awaas Yojana Gramin (PMAY-G) provides financial assistance of
-                Rs. 1.20 lakh in plain areas and Rs. 1.30 lakh in hilly/difficult areas for construction
-                of pucca house. Beneficiaries are identified from SECC-2011 database.""",
-                "metadata": {
-                    "scheme_id": "pm-awas-gramin",
-                    "scheme_name": "PMAY-G",
-                    "category": "Housing",
-                    "benefit_summary": "₹1.20-1.30 lakh for house construction",
-                    "eligibility_summary": "Houseless rural BPL families",
-                },
-            },
-        ]
-
-    def _build_bm25_index(self):
-        """Build BM25 index from current documents."""
-        if not self.documents:
-            return
-
+    def _build_bm25_index(self) -> None:
         self.tokenized_corpus = [
-            self._tokenize_for_search(doc) for doc in self.documents
+            _tokenize(self._searchable_text(doc)) for doc in self.documents
         ]
+        if self.tokenized_corpus:
+            self.bm25 = BM25Okapi(self.tokenized_corpus)
+        logger.info("Retriever ready with %s documents", len(self.documents))
 
-        self.bm25 = BM25Okapi(self.tokenized_corpus)
-        logger.info(f"BM25 index built with {len(self.tokenized_corpus)} documents")
-
-    def _normalize_search_text(self, text: str) -> str:
-        """Normalize text so hyphenated scheme names match natural user queries."""
-        cleaned = (text or "").lower()
-        cleaned = re.sub(r"[-_/]", " ", cleaned)
-        cleaned = re.sub(r"[^a-z0-9\s]", " ", cleaned)
-        cleaned = re.sub(r"\s+", " ", cleaned)
-        return cleaned.strip()
-
-    def _tokenize_text(self, text: str) -> List[str]:
-        """Tokenize text for BM25 using normalized alphanumeric terms."""
-        normalized = self._normalize_search_text(text)
-        return [token for token in normalized.split() if token]
-
-    def _tokenize_for_search(self, doc: Dict) -> List[str]:
-        """Include scheme metadata in BM25 so exact scheme-name searches rank correctly."""
+    def _searchable_text(self, doc: Dict[str, Any]) -> str:
         metadata = doc.get("metadata") or {}
-        searchable_parts = [
+        scheme = doc.get("scheme") or {}
+        parts = [
             doc.get("content", ""),
             metadata.get("scheme_name", ""),
             metadata.get("scheme_id", ""),
             metadata.get("category", ""),
             metadata.get("benefit_summary", ""),
             metadata.get("eligibility_summary", ""),
+            " ".join(scheme.get("aliases") or []),
+            " ".join(scheme.get("tags") or []),
         ]
-        return self._tokenize_text(
-            " ".join(str(part) for part in searchable_parts if part)
-        )
+        return " ".join(str(part) for part in parts if part)
 
-    def _scheme_match_boost(self, query: str, doc: Dict) -> float:
-        """Boost results that explicitly mention the queried scheme name."""
-        normalized_query = self._normalize_search_text(query)
+    def _alias_boost(self, query: str, doc: Dict[str, Any]) -> float:
+        normalized_query = _normalize(query)
         if not normalized_query:
             return 0.0
-
-        query_tokens = set(normalized_query.split())
+        scheme = doc.get("scheme") or {}
         metadata = doc.get("metadata") or {}
-        searchable = " ".join(
-            [
-                self._normalize_search_text(doc.get("content", "")),
-                self._normalize_search_text(str(metadata.get("scheme_name", ""))),
-                self._normalize_search_text(str(metadata.get("scheme_id", ""))),
-            ]
-        )
-        searchable_tokens = set(searchable.split())
-
-        if normalized_query in searchable:
-            return 0.35
-        if query_tokens and query_tokens.issubset(searchable_tokens):
-            return 0.2
-        return 0.0
-
-    def _embed_text(self, query: str) -> Optional[List[float]]:
-        """
-        Generate QUERY embedding using multilingual-e5-large (1024d).
-        Uses the required 'query: ' prefix for the e5 model family.
-        Falls back to None if embedding fails.
-        """
-        try:
-            from app.services.embedder import get_embedder
-
-            embedder = get_embedder()
-            return embedder.embed_query(query)
-        except Exception as e:
-            logger.error(f"Query embedding generation failed: {e}")
-            return None
-
-    def _embed_document(self, content: str) -> Optional[List[float]]:
-        """
-        Generate PASSAGE embedding using multilingual-e5-large (1024d).
-        Uses the required 'passage: ' prefix for the e5 model family.
-        Falls back to None if embedding fails.
-        """
-        try:
-            from app.services.embedder import get_embedder
-
-            embedder = get_embedder()
-            return embedder.embed_documents([content])[0]
-        except Exception as e:
-            logger.error(f"Document embedding generation failed: {e}")
-            return None
-
-    def _embed_texts_batch(self, texts: List[str]) -> List[List[float]]:
-        """
-        Generate PASSAGE embeddings for a batch of texts using multilingual-e5-large (1024d).
-        Uses the required 'passage: ' prefix for the e5 model family.
-        """
-        try:
-            from app.services.embedder import get_embedder
-
-            embedder = get_embedder()
-            return embedder.embed_documents(texts)
-        except Exception as e:
-            logger.error(f"Batch document embedding failed: {e}")
-            return []
-
-    def add_document(self, doc_id: str, content: str, metadata: Dict = None):
-        """Add a single document to both BM25 and ChromaDB."""
-        doc = {"id": doc_id, "content": content, "metadata": metadata or {}}
-
-        # Add to BM25
-        self.documents.append(doc)
-        self.tokenized_corpus.append(self._tokenize_for_search(doc))
-        self.bm25 = BM25Okapi(self.tokenized_corpus)
-
-        # Add to ChromaDB with passage embedding (multilingual-e5-large, 'passage: ' prefix)
-        self._sync_chroma_collection()
-        if self.chroma_collection:
-            try:
-                embedding = self._embed_document(content)
-                if embedding:
-                    # ChromaDB requires string metadata values
-                    clean_metadata = {k: str(v) for k, v in (metadata or {}).items()}
-                    self.chroma_collection.add(
-                        ids=[doc_id],
-                        documents=[content],
-                        embeddings=[embedding],
-                        metadatas=[clean_metadata],
-                    )
-                    logger.debug(f"Added document {doc_id} to ChromaDB")
-                else:
-                    # Add without embedding, ChromaDB will use default
-                    clean_metadata = {k: str(v) for k, v in (metadata or {}).items()}
-                    self.chroma_collection.add(
-                        ids=[doc_id], documents=[content], metadatas=[clean_metadata]
-                    )
-            except Exception as e:
-                logger.error(f"Failed to add to ChromaDB: {e}")
-
-    def add_documents_batch(self, documents: List[Dict]):
-        """
-        Add multiple documents at once (more efficient for bulk ingestion).
-        Each dict should have: id, content, metadata
-        """
-        if not documents:
-            return
-
-        ids = [d["id"] for d in documents]
-        contents = [d["content"] for d in documents]
-        metadatas = [
-            {k: str(v) for k, v in (d.get("metadata") or {}).items()} for d in documents
+        names = [
+            metadata.get("scheme_id", ""),
+            metadata.get("scheme_name", ""),
+            metadata.get("full_name", ""),
+            *(scheme.get("aliases") or []),
         ]
+        best = 0.0
+        for name in names:
+            alias = _normalize(str(name))
+            if not alias:
+                continue
+            if alias == normalized_query or alias in normalized_query:
+                best = max(best, 0.55 if len(alias) >= 5 else 0.35)
+            elif normalized_query in alias:
+                best = max(best, 0.3)
+        return best
 
-        # Add to BM25
-        for doc in documents:
-            self.documents.append(doc)
-            self.tokenized_corpus.append(self._tokenize_for_search(doc))
-        self.bm25 = BM25Okapi(self.tokenized_corpus)
+    def _profile_boost(self, doc: Dict[str, Any], profile: Optional[Dict[str, Any]]) -> float:
+        if not profile:
+            return 0.0
+        scheme = doc.get("scheme") or {}
+        rules = scheme.get("eligibility") or {}
+        score = 0.0
+        occupation = (profile.get("occupation") or "").lower()
+        occupations = [o.lower() for o in rules.get("occupations") or []]
+        if occupation and occupations and occupation in occupations:
+            score += 0.22
+        if profile.get("is_bpl") and rules.get("is_bpl"):
+            score += 0.12
+        if profile.get("has_land") and rules.get("has_land"):
+            score += 0.12
+        gender = (profile.get("gender") or "").lower()
+        if gender and rules.get("gender") == gender:
+            score += 0.08
+        return score
 
-        # Add to ChromaDB in batch
-        self._sync_chroma_collection()
-        if self.chroma_collection:
-            try:
-                embeddings = self._embed_texts_batch(contents)
-                if embeddings and len(embeddings) == len(ids):
-                    self.chroma_collection.add(
-                        ids=ids,
-                        documents=contents,
-                        embeddings=embeddings,
-                        metadatas=metadatas,
-                    )
-                else:
-                    # Fallback: add without embeddings
-                    self.chroma_collection.add(
-                        ids=ids, documents=contents, metadatas=metadatas
-                    )
-                logger.info(f"Added {len(ids)} documents to ChromaDB")
-            except Exception as e:
-                logger.error(f"Batch add to ChromaDB failed: {e}")
-
-    def search(self, query: str, top_k: int = 5, alpha: float = 0.5) -> List[Dict]:
+    def search(
+        self,
+        query: str,
+        top_k: int = 5,
+        alpha: float = 0.35,
+        user_profile: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
         """
-        Hybrid search combining BM25 and vector search.
+        Rank schemes for a user query.
 
-        Args:
-            query: Search query
-            top_k: Number of results to return
-            alpha: Weight for vector search (0=BM25 only, 1=vector only, 0.5=balanced)
-
-        Returns:
-            List of matching documents, scored and ranked
+        alpha is retained for API compatibility. The current ranker is lexical
+        (BM25 + alias/field match + eligibility boost). Neural vector search
+        is intentionally skipped on the query path.
         """
-        bm25_results = self._bm25_search(query, top_k=top_k * 2)
-        vector_results = self._vector_search(query, top_k=top_k * 2)
-
-        # If only one method returned results, use that
-        if not vector_results:
-            return bm25_results[:top_k]
-        if not bm25_results:
-            return vector_results[:top_k]
-
-        # Merge and re-rank
-        return self._merge_results(bm25_results, vector_results, query, alpha, top_k)
-
-    def _bm25_search(self, query: str, top_k: int = 10) -> List[Dict]:
-        """BM25 keyword search."""
+        parsed = parse_query(query, user_profile)
         if not self.bm25 or not self.documents:
             return []
 
-        tokenized_query = self._tokenize_text(query)
+        tokenized_query = _tokenize(parsed["normalized_query"] or query)
         if not tokenized_query:
-            return []
+            tokenized_query = _tokenize(query)
         scores = self.bm25.get_scores(tokenized_query)
+        max_score = max(scores) if len(scores) and max(scores) > 0 else 1.0
 
-        # Normalize scores
-        max_score = max(scores) if max(scores) > 0 else 1
-        normalized = scores / max_score
+        ranked: List[Dict[str, Any]] = []
+        for idx, doc in enumerate(self.documents):
+            bm25_score = float(scores[idx] / max_score) if max_score else 0.0
+            alias = self._alias_boost(query, doc)
+            if parsed["scheme_ids"] and doc.get("id") in parsed["scheme_ids"]:
+                alias = max(alias, 0.6)
+            if parsed.get("category"):
+                if (doc.get("metadata") or {}).get("category") == parsed["category"]:
+                    alias += 0.12
+            if parsed.get("occupation"):
+                tags = " ".join((doc.get("scheme") or {}).get("tags") or [])
+                if parsed["occupation"] in _normalize(tags + " " + doc.get("content", "")):
+                    alias += 0.08
+            combined = ((1 - alpha) * bm25_score) + (alpha * alias) + alias
+            combined += self._profile_boost(doc, user_profile)
+            if combined <= 0:
+                continue
+            ranked.append(
+                {
+                    **doc,
+                    "score": round(float(combined), 4),
+                    "bm25_score": round(bm25_score, 4),
+                    "vector_score": 0.0,
+                    "search_type": "hybrid" if alias else "bm25",
+                }
+            )
 
-        top_indices = sorted(
-            range(len(normalized)), key=lambda i: normalized[i], reverse=True
-        )[:top_k]
+        ranked.sort(key=lambda item: item["score"], reverse=True)
 
-        results = []
-        for idx in top_indices:
-            if scores[idx] > 0:
-                results.append(
-                    {
-                        **self.documents[idx],
-                        "score": float(normalized[idx])
-                        + self._scheme_match_boost(query, self.documents[idx]),
-                        "search_type": "bm25",
-                    }
-                )
+        # Deduplicate by scheme_id, keeping the strongest hit.
+        seen = set()
+        unique: List[Dict[str, Any]] = []
+        for doc in ranked:
+            scheme_id = (doc.get("metadata") or {}).get("scheme_id") or doc["id"]
+            if scheme_id in seen:
+                continue
+            seen.add(scheme_id)
+            unique.append(doc)
+            if len(unique) >= top_k:
+                break
+        return unique
 
-        results.sort(key=lambda doc: doc["score"], reverse=True)
-        return results
+    def add_document(self, doc_id: str, content: str, metadata: Dict = None):
+        """Add a supplemental document to the BM25 index. Embeddings are optional."""
+        metadata = metadata or {}
+        doc = {
+            "id": doc_id,
+            "content": content,
+            "source": "upload",
+            "scheme": None,
+            "metadata": {
+                "scheme_id": metadata.get("scheme_id") or doc_id,
+                "scheme_name": metadata.get("scheme_name") or metadata.get("name") or doc_id,
+                "category": metadata.get("category", "General"),
+                "benefit_summary": metadata.get("benefit_summary", ""),
+                "eligibility_summary": metadata.get("eligibility_summary", ""),
+                "apply_url": metadata.get("apply_url"),
+            },
+        }
+        self.documents.append(doc)
+        self.tokenized_corpus.append(_tokenize(self._searchable_text(doc)))
+        self.bm25 = BM25Okapi(self.tokenized_corpus)
 
-    def _vector_search(self, query: str, top_k: int = 10) -> List[Dict]:
-        """ChromaDB vector similarity search."""
-        self._sync_chroma_collection()
-        if not self.chroma_collection or self.chroma_collection.count() == 0:
-            return []
+        if self.chroma_collection is None:
+            try:
+                from app.db.chroma import get_chroma_client
+
+                chroma = get_chroma_client()
+                self.chroma_collection = chroma.collection
+            except Exception:
+                return
 
         try:
-            # Generate query embedding
-            query_embedding = self._embed_text(query)
+            clean_metadata = {k: str(v) for k, v in metadata.items()}
+            self.chroma_collection.add(
+                ids=[doc_id], documents=[content], metadatas=[clean_metadata]
+            )
+        except Exception as exc:
+            logger.error("Failed to persist uploaded document: %s", exc)
 
-            if query_embedding:
-                results = self.chroma_collection.query(
-                    query_embeddings=[query_embedding],
-                    n_results=min(top_k, self.chroma_collection.count()),
-                    include=["documents", "metadatas", "distances"],
-                )
-            else:
-                # Fallback: use ChromaDB's built-in text search
-                results = self.chroma_collection.query(
-                    query_texts=[query],
-                    n_results=min(top_k, self.chroma_collection.count()),
-                    include=["documents", "metadatas", "distances"],
-                )
-
-            output = []
-            if results and results["ids"] and results["ids"][0]:
-                for i, doc_id in enumerate(results["ids"][0]):
-                    # ChromaDB returns distances; convert to similarity
-                    distance = results["distances"][0][i] if results["distances"] else 0
-                    similarity = max(0, 1 - distance)
-
-                    output.append(
-                        {
-                            "id": doc_id,
-                            "content": results["documents"][0][i],
-                            "metadata": results["metadatas"][0][i] or {},
-                            "score": similarity,
-                            "search_type": "vector",
-                        }
-                    )
-
-            return output
-
-        except Exception as e:
-            logger.error(f"Vector search failed: {e}")
-            return []
-
-    def _merge_results(
-        self,
-        bm25_results: List[Dict],
-        vector_results: List[Dict],
-        query: str,
-        alpha: float,
-        top_k: int,
-    ) -> List[Dict]:
-        """
-        Merge BM25 and vector results using weighted combination.
-        alpha controls the balance: 0 = BM25 only, 1 = vector only.
-        """
-        combined = {}
-
-        # Add BM25 results
-        for doc in bm25_results:
-            doc_id = doc["id"]
-            combined[doc_id] = {
-                **doc,
-                "bm25_score": doc["score"],
-                "vector_score": 0.0,
-                "search_type": "bm25",
-            }
-
-        # Merge vector results
-        for doc in vector_results:
-            doc_id = doc["id"]
-            if doc_id in combined:
-                combined[doc_id]["vector_score"] = doc["score"]
-                combined[doc_id]["search_type"] = "hybrid"
-            else:
-                combined[doc_id] = {
-                    **doc,
-                    "bm25_score": 0.0,
-                    "vector_score": doc["score"],
-                    "search_type": "vector",
-                }
-
-        # Calculate combined scores
-        for doc_id, doc in combined.items():
-            doc["score"] = (
-                (1 - alpha) * doc["bm25_score"] + alpha * doc["vector_score"]
-            ) + self._scheme_match_boost(query, doc)
-
-        # Sort by combined score
-        ranked = sorted(combined.values(), key=lambda x: x["score"], reverse=True)
-
-        return ranked[:top_k]
+    def add_documents_batch(self, documents: List[Dict]):
+        for document in documents:
+            self.add_document(
+                document["id"],
+                document.get("content") or document.get("text", ""),
+                document.get("metadata") or {},
+            )
 
     def clear_all(self):
-        """Clear all documents from both indexes."""
-        self.documents = []
-        self.tokenized_corpus = []
-        self.bm25 = None
+        catalog_docs = [doc for doc in self.documents if doc.get("source") == "catalog"]
+        self.documents = catalog_docs
+        self._build_bm25_index()
 
-        if self.chroma_collection:
-            try:
-                # Delete and recreate collection
-                self._chroma_client.delete_collection("sahay_schemes")
-                self.chroma_collection = self._chroma_client.get_or_create_collection(
-                    name="sahay_schemes", metadata={"hnsw:space": "cosine"}
-                )
-                logger.info("Cleared all documents from ChromaDB")
-            except Exception as e:
-                logger.error(f"Failed to clear ChromaDB: {e}")
-
-    def get_stats(self) -> Dict:
-        """Get retriever statistics."""
-        self._sync_chroma_collection()
+    def get_stats(self) -> Dict[str, Any]:
         chroma_count = 0
         if self.chroma_collection:
             try:
                 chroma_count = self.chroma_collection.count()
             except Exception:
-                pass
-
+                chroma_count = 0
+        catalog_count = sum(1 for doc in self.documents if doc.get("source") == "catalog")
         return {
             "bm25_documents": len(self.documents),
+            "catalog_schemes": catalog_count,
             "chromadb_documents": chroma_count,
-            "has_vector_search": self.chroma_collection is not None,
-            "mode": "hybrid"
-            if self.chroma_collection and chroma_count > 0
-            else "bm25_only",
+            "has_vector_search": False,
+            "mode": "catalog_bm25",
         }
 
 
-# Singleton instance
 _retriever: Optional[HybridRetriever] = None
 
 
 def get_retriever() -> HybridRetriever:
-    """Get singleton retriever instance."""
     global _retriever
     if _retriever is None:
         _retriever = HybridRetriever()
@@ -555,6 +339,5 @@ def get_retriever() -> HybridRetriever:
 
 
 def reset_retriever():
-    """Reset retriever (useful after reindexing)."""
     global _retriever
     _retriever = None

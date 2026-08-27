@@ -1,34 +1,43 @@
 """
 Agent Orchestrator
-=================
+==================
 
-Master orchestrator that routes user queries to appropriate specialized agents
-and manages conversation context using Groq Llama 3.3.
-
-Author: Jagadeep Mamidi
+Single-pass RAG: parse query, retrieve scheme records, generate one grounded
+answer. Intent classification is heuristic, not an extra LLM round-trip.
 """
+
+from __future__ import annotations
 
 import logging
 import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from tenacity import retry, stop_after_attempt, wait_exponential
-
 from app.core.config import get_settings
-from app.rag.hybrid_retriever import HybridRetriever
+from app.rag.hybrid_retriever import get_retriever
+from app.rag.query_parser import parse_query
 from app.services.llm import get_llm_service
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+LANGUAGE_NAMES = {
+    "en": "English",
+    "hi": "Hindi",
+    "te": "Telugu",
+    "ta": "Tamil",
+    "bn": "Bengali",
+    "mr": "Marathi",
+    "gu": "Gujarati",
+    "kn": "Kannada",
+    "ml": "Malayalam",
+    "pa": "Punjabi",
+    "or": "Odia",
+}
+
 
 class ConversationMemory:
-    """
-    Manages conversation history and context for sessions.
-    """
-
     def __init__(self, max_turns: int = 10):
         self.max_turns = max_turns
         self._sessions: Dict[str, Dict] = defaultdict(
@@ -36,197 +45,112 @@ class ConversationMemory:
                 "messages": [],
                 "user_profile": {},
                 "language": "en",
-                "created_at": datetime.utcnow().isoformat(),
-                "last_activity": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "last_activity": datetime.now(timezone.utc).isoformat(),
             }
         )
 
-    def add_message(
-        self, session_id: str, role: str, content: str, metadata: dict = None
-    ):
-        """Add a message to session history."""
+    def add_message(self, session_id: str, role: str, content: str, metadata: dict = None):
         session = self._sessions[session_id]
         session["messages"].append(
             {
                 "role": role,
                 "content": content,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "metadata": metadata or {},
             }
         )
-        session["last_activity"] = datetime.utcnow().isoformat()
-
+        session["last_activity"] = datetime.now(timezone.utc).isoformat()
         if len(session["messages"]) > self.max_turns * 2:
             session["messages"] = session["messages"][-self.max_turns * 2 :]
 
     def get_history(self, session_id: str) -> Optional[Dict]:
-        """Get session history."""
         return self._sessions.get(session_id)
 
     def get_context_messages(self, session_id: str, last_n: int = 6) -> List[Dict]:
-        """Get recent messages for context."""
         session = self._sessions.get(session_id, {})
-        messages = session.get("messages", [])
-        return messages[-last_n:]
+        return session.get("messages", [])[-last_n:]
 
     def update_user_profile(self, session_id: str, profile: dict):
-        """Update user profile for personalization."""
         self._sessions[session_id]["user_profile"].update(profile)
 
     def set_language(self, session_id: str, language: str):
-        """Set user's preferred language."""
         self._sessions[session_id]["language"] = language
 
 
 class AgentOrchestrator:
-    """
-    Main orchestrator that:
-    1. Classifies user intent
-    2. Routes to appropriate processing path
-    3. Retrieves relevant context via RAG
-    4. Generates responses using Groq Llama
-    5. Manages conversation flow
-    """
-
     def __init__(self):
         self.memory = ConversationMemory()
-        self.retriever = HybridRetriever()
+        self.retriever = get_retriever()
         self.llm = get_llm_service()
+        logger.info("AgentOrchestrator ready (catalog RAG, single LLM pass)")
 
-        self.intent_categories = {
-            "scheme_info": "User wants information about a specific government scheme",
-            "eligibility_check": "User wants to check if they are eligible for schemes",
-            "application_help": "User needs help with the application process",
-            "document_query": "User asks about required documents",
-            "benefit_query": "User asks about benefits or amounts",
-            "status_check": "User wants to check application status",
-            "comparison": "User wants to compare multiple schemes",
-            "general_query": "General question about government schemes",
-            "greeting": "User greeting or casual conversation",
-            "feedback": "User providing feedback",
-            "unknown": "Cannot determine the intent",
-        }
+    def _format_scheme_record(self, doc: Dict[str, Any], index: int) -> str:
+        meta = doc.get("metadata") or {}
+        scheme = doc.get("scheme") or {}
+        docs = scheme.get("documents_required") or []
+        doc_line = ", ".join(item.get("name") for item in docs if item.get("name")) or "See official portal"
+        return (
+            f"[SCHEME {index}] {meta.get('scheme_name') or scheme.get('name')}\n"
+            f"Official name: {scheme.get('full_name') or meta.get('full_name') or ''}\n"
+            f"Category: {meta.get('category')}\n"
+            f"Ministry: {scheme.get('ministry') or meta.get('ministry') or ''}\n"
+            f"Benefit: {scheme.get('benefits') or meta.get('benefit_summary')}\n"
+            f"Eligibility: {scheme.get('eligibility_summary') or meta.get('eligibility_summary')}\n"
+            f"Documents: {doc_line}\n"
+            f"How to apply: {scheme.get('application_process') or ''}\n"
+            f"Official URL: {scheme.get('apply_url') or meta.get('apply_url') or ''}\n"
+            f"Helpline: {scheme.get('helpline') or 'Not listed'}"
+        )
 
-        logger.info("AgentOrchestrator initialized with Groq Llama 3.3")
-
-    async def _call_llm(self, prompt: str, system_prompt: Optional[str] = None) -> str:
-        """Call Groq LLM API with retry logic."""
-        try:
-            if system_prompt:
-                return self.llm.complete(prompt, system_prompt=system_prompt)
-            return self.llm.complete(prompt)
-        except Exception as e:
-            logger.error(f"LLM API error: {e}")
-            raise
-
-    async def classify_intent(self, query: str) -> Dict[str, Any]:
-        """
-        Classify user intent using Groq LLM.
-        Returns intent category and confidence score.
-        """
-        try:
-            prompt = f"""Analyze the following user query and classify its intent.
-
-User Query: "{query}"
-
-Possible intents:
-{chr(10).join(f"- {k}: {v}" for k, v in self.intent_categories.items())}
-
-Respond with JSON format:
-{{"intent": "intent_name", "confidence": 0.0-1.0, "entities": {{"scheme_name": null, "category": null, "state": null}}}}
-
-Only output the JSON, no other text."""
-
-            response = await self._call_llm(prompt)
-
-            import json
-
-            try:
-                clean_response = response.strip()
-                if clean_response.startswith("```"):
-                    clean_response = clean_response.split("```")[1]
-                    if clean_response.startswith("json"):
-                        clean_response = clean_response[4:]
-
-                result = json.loads(clean_response)
-                return result
-            except json.JSONDecodeError:
-                return {"intent": "general_query", "confidence": 0.5, "entities": {}}
-
-        except Exception as e:
-            logger.error(f"Intent classification error: {e}")
-            return {"intent": "general_query", "confidence": 0.5, "entities": {}}
-
-    def _get_language_specific_prompt(self, language: str) -> str:
-        """Get language-specific system prompt."""
-        prompts = {
-            "te": """You are Sahay AI (సహాయ AI), a helpful and empathetic assistant that helps Indian citizens discover and understand government welfare schemes.
-
-NALKAVATCHALU (GUIDELINES):
-1. Be warm, friendly, and use simple Telugu that everyone can understand
-2. Base your answers on the provided context from official scheme documents
-3. If information is not in the context, say so honestly
-4. When discussing eligibility, be clear about requirements
-5. Provide actionable next steps when possible
-6. Use ₹ symbol for Indian Rupees
-7. Be culturally sensitive and respectful
-8. Always respond in Telugu (తెలుగు)
-
-Keep responses concise but informative.""",
-            "hi": """आप Sahay AI (सहाय AI) हैं, जो भारतीय नागरिकों को सरकारी कल्याण योजनाओं को खोजने और समझने में मदद करने वाले सहायक हैं।
-
-दिशानिर्देश (GUIDELINES):
-1. गर्मजोशी से बात करें और सरल हिंदी का उपयोग करें
-2. अपने उत्तर आधिकारिक योजना दस्तावेजों से प्रदान की गई जानकारी पर आधारित करें
-3. यदि जानकारी संदर्भ में नहीं है, तो ईमानदारी से बताएं
-4. पात्रता पर चर्चा करते समय आवश्यकताओं के बारे में स्पष्ट रहें
-5. जब भी संभव हो, कार्रवाई योग्य अगले कदम प्रदान करें
-6. भारतीय रुपये के लिए ₹ प्रतीक का उपयोग करें
-7. सांस्कृतिक रूप से संवेदनशील और सम्मानजनक रहें
-8. हमेशा हिंदी में जवाब दें
-
-जवाब संक्षिप्त लेकिन जानकारीपूर्ण रखें।""",
-            "en": """You are Sahay AI (सहाय AI), a helpful and empathetic assistant that helps Indian citizens discover and understand government welfare schemes.
-
-GUIDELINES:
-1. Be warm, friendly, and use simple language that everyone can understand
-2. Base your answers on the provided context from official scheme documents
-3. If information is not in the context, say so honestly and suggest where to find it
-4. When discussing eligibility, be clear about requirements
-5. Provide actionable next steps when possible
-6. Use ₹ symbol for Indian Rupees
-7. Be culturally sensitive and respectful
-
-Keep responses concise but informative (2-4 paragraphs max).""",
-        }
-
-        return prompts.get(language, prompts["en"])
-
-    def _clean_response_intro(
-        self, response: str, intent: str, history: List[Dict]
-    ) -> str:
-        """Remove repetitive greeting boilerplate from ongoing non-greeting chats."""
+    def _template_response(self, query: str, hits: List[Dict[str, Any]], intent: str) -> str:
         if intent == "greeting":
-            return response.strip()
+            return (
+                "Namaste. I can help you find central government schemes, check likely "
+                "eligibility, and point you to the official application page. Tell me your "
+                "work, state, or the scheme name."
+            )
+        if not hits:
+            return (
+                "I do not have a matching scheme in the current catalog for that question. "
+                "Try a scheme name such as PM-KISAN or Ayushman Bharat, or describe your "
+                "occupation and need. You can also search the official catalogue at "
+                "https://www.myscheme.gov.in/"
+            )
 
-        assistant_turns = [m for m in history if m.get("role") == "assistant"]
-        if not assistant_turns:
-            return response.strip()
+        lines = [
+            "Here are the closest official scheme records for your question. Confirm final "
+            "eligibility on the ministry portal before you apply."
+        ]
+        for doc in hits[:3]:
+            meta = doc.get("metadata") or {}
+            scheme = doc.get("scheme") or {}
+            name = meta.get("scheme_name") or scheme.get("name")
+            lines.append("")
+            lines.append(f"{name}")
+            lines.append(f"Benefit: {scheme.get('benefits') or meta.get('benefit_summary')}")
+            lines.append(
+                f"Who it is for: {scheme.get('eligibility_summary') or meta.get('eligibility_summary')}"
+            )
+            apply_url = scheme.get("apply_url") or meta.get("apply_url")
+            if apply_url:
+                lines.append(f"Apply or read more: {apply_url}")
+        return "\n".join(lines)
 
-        cleaned = response.strip()
-        cleaned = re.sub(
-            r"^(namaste|hello|hi|hey)\s*[\!\.,:\-]*\s*",
-            "",
-            cleaned,
-            flags=re.IGNORECASE,
-        )
-        cleaned = re.sub(
-            r"^(i\s*(am|m|would be|'d be)\s+happy\s+to\s+help(?:\s+you)?(?:\s+with[^.?!]*)?[.?!]\s*)",
-            "",
-            cleaned,
-            flags=re.IGNORECASE,
-        )
-        return cleaned.strip() or response.strip()
+    def _system_prompt(self, language: str) -> str:
+        language_name = LANGUAGE_NAMES.get(language, "English")
+        return f"""You are Sahay, a public-scheme guide for Indian citizens.
+
+Rules:
+- Use ONLY the scheme records in the user message. Do not invent amounts, dates, deadlines, or eligibility rules.
+- If a detail is missing from the records, say so and point to the official URL.
+- Prefer short, practical answers. Lead with the direct answer, then 1-3 matching schemes.
+- For each scheme include benefit, who it is for, one next step, and the official URL if present.
+- Do not start with a greeting unless the user greeted you.
+- Never claim you have submitted an application or checked a live government database.
+- Respond in {language_name}. Keep official scheme names in their common English form.
+- Do not use em dashes. Use commas, periods, or a hyphen.
+"""
 
     async def generate_response(
         self,
@@ -235,70 +159,84 @@ Keep responses concise but informative (2-4 paragraphs max).""",
         session_id: str,
         intent_info: Dict,
         user_profile: Optional[Dict] = None,
+        hits: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
-        """
-        Generate a response using Groq Llama with RAG context.
-        """
-        try:
-            history = self.memory.get_context_messages(session_id)
-            history_text = ""
-            if history:
-                history_text = "Recent conversation:\n" + "\n".join(
-                    [
-                        f"{'User' if m['role'] == 'user' else 'Sahay AI'}: {m['content']}"
-                        for m in history[-4:]
-                    ]
-                )
+        language = "en"
+        session = self.memory.get_history(session_id)
+        if session:
+            language = session.get("language", "en")
 
-            context_text = (
-                "\n\n".join(context)
-                if context
-                else "No specific scheme information available."
+        if not settings.groq_api_key:
+            return self._template_response(query, hits or [], intent_info.get("intent", "general_query"))
+
+        history = self.memory.get_context_messages(session_id)
+        history_text = ""
+        if history:
+            history_text = "Recent conversation:\n" + "\n".join(
+                f"{'User' if m['role'] == 'user' else 'Sahay'}: {m['content']}"
+                for m in history[-4:]
             )
 
-            profile_text = ""
-            if user_profile:
-                profile_parts = []
-                if user_profile.get("state"):
-                    profile_parts.append(f"State: {user_profile['state']}")
-                if user_profile.get("occupation"):
-                    profile_parts.append(f"Occupation: {user_profile['occupation']}")
-                if user_profile.get("income"):
-                    profile_parts.append(f"Annual Income: ₹{user_profile['income']:,}")
-                if profile_parts:
-                    profile_text = "User Profile: " + ", ".join(profile_parts)
+        profile_text = ""
+        if user_profile:
+            parts = [
+                f"{key}: {value}"
+                for key, value in user_profile.items()
+                if value not in (None, "")
+            ]
+            if parts:
+                profile_text = "User profile: " + ", ".join(parts)
 
-            session = self.memory.get_history(session_id)
-            language = session.get("language", "en") if session else "en"
-            system_prompt = self._get_language_specific_prompt(language)
-
-            prompt = f"""{system_prompt}
-
-Do not start the answer with greetings or pleasantries unless the user greeted you first.
-
-{history_text}
+        prompt = f"""{history_text}
 
 {profile_text}
 
-RELEVANT SCHEME INFORMATION:
-{context_text}
+SCHEME RECORDS:
+{chr(10).join(context) if context else "No matching scheme records."}
 
-USER INTENT: {intent_info.get("intent", "general_query")}
-
+USER INTENT: {intent_info.get("intent")}
 USER QUESTION: {query}
 
-SAHAY AI RESPONSE:"""
-
-            response = await self._call_llm(prompt)
+Write the answer now."""
+        try:
+            response = self.llm.complete(
+                prompt,
+                system_prompt=self._system_prompt(language),
+                temperature=0.2,
+                max_tokens=700,
+            )
             return self._clean_response_intro(
-                response,
+                self._sanitize_copy(response),
                 intent_info.get("intent", "general_query"),
                 history,
             )
+        except Exception as exc:
+            logger.error("LLM generation failed, using template: %s", exc)
+            return self._template_response(query, hits or [], intent_info.get("intent", "general_query"))
 
-        except Exception as e:
-            logger.error(f"Response generation error: {e}")
-            return "I apologize, but I encountered an error while processing your question. Please try again."
+    def _sanitize_copy(self, text: str) -> str:
+        cleaned = text or ""
+        for old, new in (("\u2014", "-"), ("\u2013", "-"), ("\u2011", "-"), ("\u00a0", " ")):
+            cleaned = cleaned.replace(old, new)
+        return cleaned
+
+    def _clean_response_intro(self, response: str, intent: str, history: List[Dict]) -> str:
+        if intent == "greeting":
+            return (response or "").strip()
+        assistant_turns = [m for m in history if m.get("role") == "assistant"]
+        if not assistant_turns:
+            return (response or "").strip()
+        cleaned = (response or "").strip()
+        cleaned = re.sub(
+            r"^(namaste|hello|hi|hey)\s*[!.:\-]*\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        return cleaned.strip() or (response or "").strip()
+
+    async def classify_intent(self, query: str) -> Dict[str, Any]:
+        return parse_query(query)
 
     async def process(
         self,
@@ -307,34 +245,42 @@ SAHAY AI RESPONSE:"""
         session_id: Optional[str] = None,
         user_profile: Optional[Dict] = None,
     ) -> Dict[str, Any]:
-        """
-        Main entry point for processing user queries.
-
-        Returns:
-            Dict with response, intent, confidence, schemes, and suggested questions
-        """
         if not session_id:
-            session_id = f"session_{datetime.utcnow().timestamp()}"
+            session_id = f"session_{datetime.now(timezone.utc).timestamp()}"
 
         try:
             if user_profile:
                 self.memory.update_user_profile(session_id, user_profile)
-
             self.memory.add_message(session_id, "user", query)
             self.memory.set_language(session_id, language)
 
-            intent_info = await self.classify_intent(query)
-            logger.info(f"Intent classified: {intent_info}")
+            search_query = query
+            if language != "en":
+                try:
+                    from app.agents.language_agent import get_language_agent
 
-            context = self.retriever.search(query, top_k=5)
-            context_texts = [doc.get("content", "") for doc in context]
+                    search_query = get_language_agent().translate_to_english(query, language)
+                except Exception as exc:
+                    logger.warning("Query translation skipped: %s", exc)
+                    search_query = query
 
+            intent_info = parse_query(search_query, user_profile)
+            hits: List[Dict[str, Any]] = []
+            if intent_info.get("intent") != "greeting":
+                hits = self.retriever.search(
+                    search_query, top_k=5, user_profile=user_profile
+                )
+
+            context_texts = [
+                self._format_scheme_record(doc, index + 1) for index, doc in enumerate(hits)
+            ]
             response = await self.generate_response(
                 query=query,
                 context=context_texts,
                 session_id=session_id,
                 intent_info=intent_info,
                 user_profile=user_profile or {},
+                hits=hits,
             )
 
             self.memory.add_message(
@@ -348,97 +294,79 @@ SAHAY AI RESPONSE:"""
             )
 
             schemes = []
-            for doc in context[:3]:
-                if doc.get("metadata", {}).get("scheme_id"):
-                    schemes.append(
-                        {
-                            "id": doc["metadata"]["scheme_id"],
-                            "name": doc["metadata"].get("scheme_name", ""),
-                            "category": doc["metadata"].get("category", ""),
-                            "benefit_summary": doc["metadata"].get(
-                                "benefit_summary", ""
-                            ),
-                            "eligibility_summary": doc["metadata"].get(
-                                "eligibility_summary", ""
-                            ),
-                        }
-                    )
-
-            suggested = await self._generate_suggestions(query, intent_info, response)
+            seen = set()
+            for doc in hits[:4]:
+                meta = doc.get("metadata") or {}
+                scheme_id = meta.get("scheme_id") or doc.get("id")
+                if not scheme_id or scheme_id in seen:
+                    continue
+                seen.add(scheme_id)
+                schemes.append(
+                    {
+                        "id": scheme_id,
+                        "name": meta.get("scheme_name") or "",
+                        "category": meta.get("category") or "",
+                        "benefit_summary": meta.get("benefit_summary") or "",
+                        "eligibility_summary": meta.get("eligibility_summary") or "",
+                        "apply_url": meta.get("apply_url"),
+                    }
+                )
 
             return {
                 "response": response,
                 "intent": intent_info.get("intent"),
                 "confidence": intent_info.get("confidence"),
                 "schemes": schemes,
-                "suggested_questions": suggested,
+                "suggested_questions": self._generate_suggestions(intent_info, schemes),
                 "session_id": session_id,
+                "retrieval_count": len(hits),
             }
-
-        except Exception as e:
-            logger.error(f"Query processing error: {e}", exc_info=True)
+        except Exception as exc:
+            logger.error("Query processing error: %s", exc, exc_info=True)
             return {
-                "response": "I apologize, but I encountered an error. Please try again.",
+                "response": "I could not complete that request. Please try again with a scheme name or a short description of your work and need.",
                 "intent": "error",
                 "confidence": 0,
                 "schemes": [],
                 "suggested_questions": [
-                    "What schemes am I eligible for?",
                     "Tell me about PM-KISAN",
+                    "What health cover can my family get?",
+                    "I am a farmer in Maharashtra. What can I apply for?",
                 ],
                 "session_id": session_id,
             }
 
-    async def _generate_suggestions(
-        self, query: str, intent_info: Dict, response: str
-    ) -> List[str]:
-        """Generate contextual follow-up question suggestions."""
-        intent = intent_info.get("intent", "general_query")
-
-        suggestions_map = {
-            "scheme_info": [
-                "What are the eligibility criteria?",
-                "How do I apply for this scheme?",
-                "What documents are required?",
+    def _generate_suggestions(self, intent_info: Dict, schemes: List[Dict]) -> List[str]:
+        if schemes:
+            name = schemes[0].get("name") or "this scheme"
+            return [
+                f"What documents are needed for {name}?",
+                f"How do I apply for {name}?",
+                "What else might I be eligible for?",
+            ]
+        intent = intent_info.get("intent")
+        mapping = {
+            "greeting": [
+                "I am a farmer. Which schemes fit me?",
+                "Tell me about Ayushman Bharat",
+                "How does PM-KISAN pay the Rs. 6,000?",
             ],
             "eligibility_check": [
-                "What documents do I need?",
-                "How do I apply online?",
-                "What is the benefit amount?",
-            ],
-            "application_help": [
-                "What is the deadline?",
-                "Where is the nearest center?",
-                "How long does approval take?",
-            ],
-            "document_query": [
-                "Can I apply online?",
-                "What if I don't have a document?",
-                "Where can I get these documents?",
-            ],
-            "benefit_query": [
-                "When will I receive the money?",
-                "How is the payment made?",
-                "Can family members also benefit?",
-            ],
-            "greeting": [
-                "What schemes am I eligible for?",
-                "Tell me about PM-KISAN",
-                "How can I check my application status?",
+                "I need housing support in a village",
+                "What scholarships can a student apply for?",
+                "Are there loans for a small shop?",
             ],
         }
-
-        return suggestions_map.get(
+        return mapping.get(
             intent,
             [
-                "What other schemes are available?",
-                "Check my eligibility",
-                "Help me apply",
+                "What schemes am I eligible for?",
+                "Tell me about PM-KISAN",
+                "How do I apply for Ayushman Bharat?",
             ],
         )
 
     def get_conversation_history(self, session_id: str) -> Optional[Dict]:
-        """Get full conversation history for a session."""
         return self.memory.get_history(session_id)
 
 
@@ -446,7 +374,6 @@ _orchestrator: Optional[AgentOrchestrator] = None
 
 
 def get_orchestrator() -> AgentOrchestrator:
-    """Get or create singleton orchestrator."""
     global _orchestrator
     if _orchestrator is None:
         _orchestrator = AgentOrchestrator()
