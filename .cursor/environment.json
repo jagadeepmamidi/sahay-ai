@@ -1,0 +1,21 @@
+{
+  "name": "Sahay AI",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "backend",
+      "command": "cd backend && source venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000",
+      "description": "FastAPI backend API on http://localhost:8000 (interactive docs at /docs when DEBUG=true). Serves chat, schemes, eligibility, voice and health endpoints under /api/v1."
+    },
+    {
+      "name": "frontend",
+      "command": "cd frontend && npm run dev",
+      "description": "Next.js dev server (Turbopack) on http://localhost:3000. Talks to the backend at http://localhost:8000/api/v1."
+    }
+  ],
+  "ports": [
+    { "name": "backend-api", "port": 8000 },
+    { "name": "frontend-web", "port": 3000 }
+  ]
+}
