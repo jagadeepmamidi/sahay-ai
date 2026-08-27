@@ -818,8 +818,10 @@ async def check_eligibility(request: EligibilityCheckRequest):
                 )
             )
 
-        # Sort by match score descending
         eligible_schemes.sort(key=lambda x: x.match_score, reverse=True)
+        eligible_schemes = [
+            item for item in eligible_schemes if item.match_score >= 0.5
+        ][:10]
 
         return EligibilityCheckResponse(
             user_profile=request.model_dump(exclude_none=True),

@@ -36,7 +36,7 @@ export function Navbar() {
         </nav>
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Link href="/chat" className="btn btn-primary hidden sm:inline-flex">
+          <Link href="/chat" className="btn btn-primary nav-cta">
             Ask Sahay
             <span className="btn-icon">
               <ArrowUpRight size={16} />
@@ -44,7 +44,7 @@ export function Navbar() {
           </Link>
           <button
             type="button"
-            className="icon-btn lg:hidden"
+            className="icon-btn nav-toggle"
             onClick={() => setOpen((value) => !value)}
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
@@ -54,7 +54,7 @@ export function Navbar() {
         </div>
       </header>
       {open && (
-        <div className="shell mt-3 rounded-[1.5rem] border border-[var(--line)] bg-[var(--surface)] p-4 lg:hidden">
+        <div className="shell nav-mobile mt-3 rounded-[1.5rem] border border-[var(--line)] bg-[var(--surface)] p-4">
           <div className="flex flex-col gap-1">
             {navLinks.map((link) => (
               <Link
